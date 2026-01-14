@@ -9,6 +9,7 @@
       "version": "0.1.0",
       "dependencies": {
         "next": "16.1.1",
+        "pogicity": "workspace:*",
         "react": "19.2.3",
         "react-dom": "19.2.3",
       },
