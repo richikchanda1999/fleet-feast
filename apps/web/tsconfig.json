@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@/app/*": ["../../packages/pogicity-demo/app/*"]
     }
   },
   "include": [
