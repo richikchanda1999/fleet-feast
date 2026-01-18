@@ -6,6 +6,17 @@
  *
  * Grid: 48x48 cells (each cell is 44x22 pixels in isometric projection)
  * Roads: 4x4 segment system for clean intersections
+ *
+ * Road Layout:
+ * - Main vertical arteries at x=16 and x=32 (each 4 cells wide: 16-19, 32-35)
+ * - Main horizontal arteries at y=16 and y=32 (each 4 cells wide: 16-19, 32-35)
+ *
+ * This creates 4 corner zones + 1 center zone:
+ * - University (top-left): x=0-15, y=0-15
+ * - Park (top-right): x=36-47, y=0-15
+ * - Stadium (bottom-left): x=0-15, y=36-47
+ * - Residential (bottom-right): x=36-47, y=36-47
+ * - Downtown (center): x=20-31, y=20-31
  */
 
 // Import only types and utilities - avoid importing the full pogicity which includes Phaser
@@ -43,6 +54,7 @@ export interface Zone {
   name: string;
   description: string;
   color: string; // For visualization overlays
+  tileType: TileType; // Ground tile type for this zone
   bounds: {
     x: number;
     y: number;
@@ -59,7 +71,8 @@ export const ZONES: Zone[] = [
     name: "Downtown Office District",
     description: "Dense office buildings with high lunch rush demand",
     color: "#3B82F6", // Blue
-    bounds: { x: 17, y: 17, width: 14, height: 14 },
+    tileType: TileType.Tile, // Concrete/pavement feel
+    bounds: { x: 20, y: 20, width: 12, height: 12 },
     demandPattern: {
       peakHours: [11, 12, 13], // 11am-2pm lunch rush
       baseMultiplier: 0.2,
@@ -67,8 +80,8 @@ export const ZONES: Zone[] = [
       description: "Heavy lunch rush from office workers",
     },
     parkingSpots: [
-      { x: 20, y: 20, name: "Office Plaza", capacity: 2 },
-      { x: 26, y: 26, name: "Corporate Corner", capacity: 1 },
+      { x: 22, y: 22, name: "Office Plaza", capacity: 2 },
+      { x: 28, y: 28, name: "Corporate Corner", capacity: 1 },
     ],
   },
   {
@@ -76,7 +89,8 @@ export const ZONES: Zone[] = [
     name: "University Campus",
     description: "Academic buildings with student-driven demand",
     color: "#DC2626", // Red (brick)
-    bounds: { x: 2, y: 2, width: 14, height: 14 },
+    tileType: TileType.Grass, // Campus green
+    bounds: { x: 0, y: 0, width: 16, height: 16 },
     demandPattern: {
       peakHours: [11, 12, 13, 18, 19, 20], // Lunch and dinner
       baseMultiplier: 0.3,
@@ -84,8 +98,8 @@ export const ZONES: Zone[] = [
       description: "Students hungry at lunch and dinner",
     },
     parkingSpots: [
-      { x: 8, y: 8, name: "Library Quad", capacity: 2 },
-      { x: 12, y: 4, name: "Student Center", capacity: 1 },
+      { x: 6, y: 6, name: "Library Quad", capacity: 2 },
+      { x: 10, y: 2, name: "Student Center", capacity: 1 },
     ],
   },
   {
@@ -93,7 +107,8 @@ export const ZONES: Zone[] = [
     name: "Central Park",
     description: "Green space with recreational visitors",
     color: "#22C55E", // Green
-    bounds: { x: 32, y: 2, width: 14, height: 14 },
+    tileType: TileType.Grass, // Park green
+    bounds: { x: 36, y: 0, width: 12, height: 16 },
     demandPattern: {
       peakHours: [12, 17, 18, 19], // Lunch and after-work
       baseMultiplier: 0.15,
@@ -101,7 +116,7 @@ export const ZONES: Zone[] = [
       description: "Picnickers and joggers",
     },
     parkingSpots: [
-      { x: 38, y: 8, name: "Pavilion Area", capacity: 2 },
+      { x: 40, y: 6, name: "Pavilion Area", capacity: 2 },
     ],
   },
   {
@@ -109,7 +124,8 @@ export const ZONES: Zone[] = [
     name: "Sports Stadium",
     description: "Large arena with event-driven demand spikes",
     color: "#F97316", // Orange
-    bounds: { x: 2, y: 32, width: 14, height: 14 },
+    tileType: TileType.Asphalt, // Parking lot feel
+    bounds: { x: 0, y: 36, width: 16, height: 12 },
     demandPattern: {
       peakHours: [18, 19, 20, 21], // Evening events
       baseMultiplier: 0.05, // Almost no demand without events
@@ -117,7 +133,7 @@ export const ZONES: Zone[] = [
       description: "Sporadic but intense event crowds",
     },
     parkingSpots: [
-      { x: 8, y: 36, name: "Stadium Gate", capacity: 3 },
+      { x: 6, y: 40, name: "Stadium Gate", capacity: 3 },
     ],
   },
   {
@@ -125,7 +141,8 @@ export const ZONES: Zone[] = [
     name: "Residential Area",
     description: "Homes and apartments with evening dinner demand",
     color: "#A855F7", // Purple
-    bounds: { x: 32, y: 32, width: 14, height: 14 },
+    tileType: TileType.Grass, // Suburban grass
+    bounds: { x: 36, y: 36, width: 12, height: 12 },
     demandPattern: {
       peakHours: [17, 18, 19, 20], // Dinner time
       baseMultiplier: 0.25,
@@ -133,8 +150,8 @@ export const ZONES: Zone[] = [
       description: "Families wanting dinner convenience",
     },
     parkingSpots: [
-      { x: 38, y: 38, name: "Community Corner", capacity: 1 },
-      { x: 42, y: 34, name: "Apartment Complex", capacity: 1 },
+      { x: 40, y: 40, name: "Community Corner", capacity: 1 },
+      { x: 44, y: 38, name: "Apartment Complex", capacity: 1 },
     ],
   },
 ];
@@ -145,89 +162,108 @@ export const ZONES: Zone[] = [
 
 /**
  * Road segments are placed at 4x4 aligned positions.
- * This creates a grid connecting all zones with intersections.
+ * Main arteries at x=16, x=32 (vertical) and y=16, y=32 (horizontal)
  */
 export const ROAD_SEGMENTS: Array<{ x: number; y: number }> = [
-  // Main horizontal artery at y=16 (top of downtown)
+  // ===== MAIN HORIZONTAL ARTERY at y=16 (top road) =====
+  { x: 0, y: 16 },
   { x: 4, y: 16 },
   { x: 8, y: 16 },
   { x: 12, y: 16 },
-  { x: 16, y: 16 }, // Intersection
+  { x: 16, y: 16 }, // Intersection with left vertical
   { x: 20, y: 16 },
   { x: 24, y: 16 },
-  { x: 28, y: 16 }, // Intersection
-  { x: 32, y: 16 },
+  { x: 28, y: 16 },
+  { x: 32, y: 16 }, // Intersection with right vertical
   { x: 36, y: 16 },
   { x: 40, y: 16 },
+  { x: 44, y: 16 },
 
-  // Main horizontal artery at y=28 (bottom of downtown)
-  { x: 4, y: 28 },
-  { x: 8, y: 28 },
-  { x: 12, y: 28 },
-  { x: 16, y: 28 }, // Intersection
-  { x: 20, y: 28 },
-  { x: 24, y: 28 },
-  { x: 28, y: 28 }, // Intersection
-  { x: 32, y: 28 },
-  { x: 36, y: 28 },
-  { x: 40, y: 28 },
+  // ===== MAIN HORIZONTAL ARTERY at y=32 (bottom road) =====
+  { x: 0, y: 32 },
+  { x: 4, y: 32 },
+  { x: 8, y: 32 },
+  { x: 12, y: 32 },
+  { x: 16, y: 32 }, // Intersection with left vertical
+  { x: 20, y: 32 },
+  { x: 24, y: 32 },
+  { x: 28, y: 32 },
+  { x: 32, y: 32 }, // Intersection with right vertical
+  { x: 36, y: 32 },
+  { x: 40, y: 32 },
+  { x: 44, y: 32 },
 
-  // Main vertical artery at x=16 (left of downtown)
+  // ===== MAIN VERTICAL ARTERY at x=16 (left road) =====
+  { x: 16, y: 0 },
   { x: 16, y: 4 },
   { x: 16, y: 8 },
   { x: 16, y: 12 },
-  // { x: 16, y: 16 }, // Already added above
+  // { x: 16, y: 16 }, // Already added (intersection)
   { x: 16, y: 20 },
   { x: 16, y: 24 },
-  // { x: 16, y: 28 }, // Already added above
-  { x: 16, y: 32 },
+  { x: 16, y: 28 },
+  // { x: 16, y: 32 }, // Already added (intersection)
   { x: 16, y: 36 },
   { x: 16, y: 40 },
+  { x: 16, y: 44 },
 
-  // Main vertical artery at x=28 (right of downtown)
-  { x: 28, y: 4 },
-  { x: 28, y: 8 },
-  { x: 28, y: 12 },
-  // { x: 28, y: 16 }, // Already added above
-  { x: 28, y: 20 },
-  { x: 28, y: 24 },
-  // { x: 28, y: 28 }, // Already added above
-  { x: 28, y: 32 },
-  { x: 28, y: 36 },
-  { x: 28, y: 40 },
+  // ===== MAIN VERTICAL ARTERY at x=32 (right road) =====
+  { x: 32, y: 0 },
+  { x: 32, y: 4 },
+  { x: 32, y: 8 },
+  { x: 32, y: 12 },
+  // { x: 32, y: 16 }, // Already added (intersection)
+  { x: 32, y: 20 },
+  { x: 32, y: 24 },
+  { x: 32, y: 28 },
+  // { x: 32, y: 32 }, // Already added (intersection)
+  { x: 32, y: 36 },
+  { x: 32, y: 40 },
+  { x: 32, y: 44 },
 
-  // Downtown internal roads (center cross)
-  { x: 20, y: 20 },
-  { x: 24, y: 20 },
+  // ===== DOWNTOWN INTERNAL ROADS =====
+  // Horizontal through downtown at y=24
   { x: 20, y: 24 },
   { x: 24, y: 24 },
+  { x: 28, y: 24 },
+  // Vertical through downtown at x=24
+  { x: 24, y: 20 },
+  // { x: 24, y: 24 }, // Already added
+  { x: 24, y: 28 },
 
-  // University campus access roads
+  // ===== UNIVERSITY CAMPUS ACCESS ROADS =====
+  // Vertical road at x=8
+  { x: 8, y: 0 },
   { x: 8, y: 4 },
   { x: 8, y: 8 },
   { x: 8, y: 12 },
+  // Horizontal road at y=8
+  { x: 0, y: 8 },
   { x: 4, y: 8 },
+  // { x: 8, y: 8 }, // Already added
   { x: 12, y: 8 },
 
-  // Park access roads
-  { x: 36, y: 4 },
-  { x: 36, y: 8 },
-  { x: 36, y: 12 },
+  // ===== PARK ACCESS ROADS =====
+  // Vertical road at x=40
+  { x: 40, y: 0 },
+  { x: 40, y: 4 },
   { x: 40, y: 8 },
+  { x: 40, y: 12 },
 
-  // Stadium access roads
-  { x: 8, y: 32 },
+  // ===== STADIUM ACCESS ROADS =====
+  // Simple vertical road at x=8 connecting to main road
   { x: 8, y: 36 },
   { x: 8, y: 40 },
-  { x: 4, y: 36 },
-  { x: 12, y: 36 },
+  { x: 8, y: 44 },
 
-  // Residential area access roads
-  { x: 36, y: 32 },
-  { x: 36, y: 36 },
-  { x: 36, y: 40 },
+  // ===== RESIDENTIAL ACCESS ROADS =====
+  // Vertical road at x=40
   { x: 40, y: 36 },
-  { x: 32, y: 36 },
+  { x: 40, y: 40 },
+  { x: 40, y: 44 },
+  // Horizontal road at y=40
+  // { x: 40, y: 40 }, // Already added
+  { x: 44, y: 40 },
 ];
 
 // ============================================================================
@@ -241,90 +277,123 @@ export interface BuildingPlacement {
   orientation: Direction;
 }
 
+/**
+ * Building placements are defined by their top-left corner position.
+ * Each zone has buildings that fit within its boundaries, avoiding roads.
+ */
 export const BUILDING_PLACEMENTS: BuildingPlacement[] = [
-  // ========== DOWNTOWN OFFICE DISTRICT ==========
-  // Large office buildings
-  { buildingId: "palo-alto-wide-office", x: 18, y: 18, orientation: Direction.Down },
-  { buildingId: "palo-alto-office-center", x: 25, y: 18, orientation: Direction.Down },
-  { buildingId: "magicpath-office", x: 18, y: 25, orientation: Direction.Down },
-  { buildingId: "general-intelligence-office", x: 25, y: 25, orientation: Direction.Down },
+  // ========== DOWNTOWN OFFICE DISTRICT (x=20-31, y=20-31) ==========
+  // Uses TileType.Tile for urban feel
+  // Available space: 20-23 (before road at 24), 25-31 (after road)
 
-  // Commercial/retail ground floor
-  { buildingId: "dunkin", x: 17, y: 17, orientation: Direction.Down },
-  { buildingId: "popeyes", x: 29, y: 17, orientation: Direction.Down },
+  // Left side of downtown (x=20-23)
+  { buildingId: "promptlayer-office", x: 20, y: 20, orientation: Direction.Down }, // 2x3
+  { buildingId: "dunkin", x: 20, y: 28, orientation: Direction.Down }, // 2x2
 
-  // ========== UNIVERSITY CAMPUS ==========
-  // Main academic buildings
-  { buildingId: "internet-archive", x: 4, y: 4, orientation: Direction.Down }, // Library
-  { buildingId: "private-school", x: 11, y: 4, orientation: Direction.Down }, // Lecture hall
-  { buildingId: "bookstore", x: 4, y: 11, orientation: Direction.Down },
+  // Right side of downtown (x=25-31, y=20-23 and y=25-31)
+  { buildingId: "palo-alto-office-center", x: 26, y: 20, orientation: Direction.Down }, // 6x5
+  { buildingId: "general-intelligence-office", x: 26, y: 26, orientation: Direction.Down }, // 4x3
+  { buildingId: "popeyes", x: 30, y: 29, orientation: Direction.Down }, // 2x2
 
-  // Student housing
-  { buildingId: "80s-apartment", x: 12, y: 11, orientation: Direction.Down },
-  { buildingId: "row-houses", x: 12, y: 14, orientation: Direction.Down },
+  // ========== UNIVERSITY CAMPUS (x=0-15, y=0-15) ==========
+  // Uses TileType.Grass for campus green
+  // Roads at x=8-11 and y=8-11
 
-  // Campus decorations
-  { buildingId: "fountain", x: 9, y: 9, orientation: Direction.Down },
-  { buildingId: "statue", x: 7, y: 5, orientation: Direction.Down },
-  { buildingId: "tree-1", x: 5, y: 10, orientation: Direction.Down },
-  { buildingId: "tree-2", x: 10, y: 5, orientation: Direction.Down },
-  { buildingId: "modern-bench", x: 8, y: 10, orientation: Direction.Down },
+  // Top-left quadrant (x=0-7, y=0-7)
+  { buildingId: "internet-archive", x: 0, y: 0, orientation: Direction.Down }, // 6x6 (Library)
+  { buildingId: "tree-1", x: 7, y: 0, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-2", x: 7, y: 2, orientation: Direction.Down }, // 1x1
+  { buildingId: "fountain", x: 6, y: 4, orientation: Direction.Down }, // 2x2
 
-  // ========== CENTRAL PARK ==========
-  // Pavilion/gazebo area (using trees and benches for now)
-  { buildingId: "fountain", x: 38, y: 6, orientation: Direction.Down },
-  { buildingId: "tree-1", x: 34, y: 4, orientation: Direction.Down },
-  { buildingId: "tree-2", x: 36, y: 4, orientation: Direction.Down },
-  { buildingId: "tree-3", x: 38, y: 4, orientation: Direction.Down },
-  { buildingId: "tree-4", x: 40, y: 4, orientation: Direction.Down },
-  { buildingId: "tree-1", x: 42, y: 4, orientation: Direction.Down },
-  { buildingId: "tree-2", x: 44, y: 4, orientation: Direction.Down },
-  { buildingId: "tree-3", x: 34, y: 6, orientation: Direction.Down },
-  { buildingId: "tree-4", x: 42, y: 6, orientation: Direction.Down },
-  { buildingId: "tree-1", x: 34, y: 10, orientation: Direction.Down },
-  { buildingId: "tree-2", x: 40, y: 10, orientation: Direction.Down },
-  { buildingId: "tree-3", x: 44, y: 10, orientation: Direction.Down },
-  { buildingId: "tree-4", x: 34, y: 14, orientation: Direction.Down },
-  { buildingId: "tree-1", x: 38, y: 14, orientation: Direction.Down },
-  { buildingId: "tree-2", x: 42, y: 14, orientation: Direction.Down },
+  // Top-right quadrant (x=12-15, y=0-7)
+  { buildingId: "private-school", x: 12, y: 0, orientation: Direction.Right }, // 3x6 (rotated)
+  { buildingId: "tree-3", x: 15, y: 0, orientation: Direction.Down }, // 1x1
 
-  // Park benches and tables
-  { buildingId: "victorian-bench", x: 36, y: 6, orientation: Direction.Down },
-  { buildingId: "victorian-bench", x: 40, y: 6, orientation: Direction.Left },
-  { buildingId: "park-table", x: 36, y: 10, orientation: Direction.Down },
-  { buildingId: "park-table", x: 38, y: 10, orientation: Direction.Down },
-  { buildingId: "modern-bench", x: 36, y: 14, orientation: Direction.Down },
+  // Bottom-left quadrant (x=0-7, y=12-15)
+  { buildingId: "bookstore", x: 0, y: 12, orientation: Direction.Down }, // 4x4
+  { buildingId: "modern-bench", x: 5, y: 12, orientation: Direction.Down }, // 1x1
+  { buildingId: "modern-bench", x: 5, y: 14, orientation: Direction.Down }, // 1x1
 
-  // ========== STADIUM AREA ==========
-  // Main stadium (using large landmark building)
-  { buildingId: "schwab-mansion", x: 4, y: 34, orientation: Direction.Down }, // Stadium
+  // Bottom-right quadrant (x=12-15, y=12-15)
+  { buildingId: "80s-apartment", x: 12, y: 12, orientation: Direction.Down }, // 3x3 (Student housing)
+  { buildingId: "tree-4", x: 15, y: 15, orientation: Direction.Down }, // 1x1
 
-  // Parking area buildings
-  { buildingId: "checkers", x: 12, y: 34, orientation: Direction.Down }, // Food vendor
-  { buildingId: "bus-shelter", x: 4, y: 42, orientation: Direction.Down },
+  // ========== CENTRAL PARK (x=36-47, y=0-15) ==========
+  // Uses TileType.Grass for park green
+  // Road at x=40-43
 
-  // ========== RESIDENTIAL AREA ==========
-  // Houses and apartments
-  { buildingId: "sf-victorian", x: 34, y: 34, orientation: Direction.Down },
-  { buildingId: "sf-victorian-2", x: 37, y: 34, orientation: Direction.Down },
-  { buildingId: "full-house", x: 40, y: 34, orientation: Direction.Down },
-  { buildingId: "blue-painted-lady", x: 43, y: 34, orientation: Direction.Down },
+  // Left side of park (x=36-39, y=0-15)
+  { buildingId: "fountain", x: 36, y: 2, orientation: Direction.Down }, // 2x2
+  { buildingId: "tree-1", x: 36, y: 5, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-2", x: 38, y: 5, orientation: Direction.Down }, // 1x1
+  { buildingId: "victorian-bench", x: 36, y: 7, orientation: Direction.Down }, // 1x1
+  { buildingId: "victorian-bench", x: 38, y: 7, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-3", x: 36, y: 10, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-4", x: 38, y: 10, orientation: Direction.Down }, // 1x1
+  { buildingId: "park-table", x: 36, y: 12, orientation: Direction.Down }, // 1x1
+  { buildingId: "park-table", x: 38, y: 12, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-1", x: 36, y: 14, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-2", x: 38, y: 14, orientation: Direction.Down }, // 1x1
 
-  { buildingId: "english-townhouse", x: 34, y: 38, orientation: Direction.Down },
-  { buildingId: "sf-marina-house", x: 37, y: 38, orientation: Direction.Down },
-  { buildingId: "limestone", x: 40, y: 38, orientation: Direction.Down },
-  { buildingId: "yellow-apartments", x: 43, y: 38, orientation: Direction.Down },
+  // Right side of park (x=44-47, y=0-15)
+  { buildingId: "tree-3", x: 44, y: 0, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-4", x: 46, y: 0, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-1", x: 44, y: 3, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-2", x: 46, y: 3, orientation: Direction.Down }, // 1x1
+  { buildingId: "statue", x: 45, y: 6, orientation: Direction.Down }, // 1x2
+  { buildingId: "tree-3", x: 44, y: 9, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-4", x: 46, y: 9, orientation: Direction.Down }, // 1x1
+  { buildingId: "victorian-bench", x: 44, y: 12, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-1", x: 46, y: 12, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-2", x: 44, y: 14, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-3", x: 46, y: 14, orientation: Direction.Down }, // 1x1
 
-  { buildingId: "brownstone", x: 34, y: 41, orientation: Direction.Down },
-  { buildingId: "romanesque-2", x: 37, y: 41, orientation: Direction.Down },
-  { buildingId: "romanesque-3", x: 40, y: 41, orientation: Direction.Down },
-  { buildingId: "strange-townhouse", x: 43, y: 41, orientation: Direction.Down },
+  // ========== STADIUM AREA (x=0-15, y=36-47) ==========
+  // Uses TileType.Asphalt for parking lot feel
+  // Road at x=8-11 (vertical only)
 
-  // Residential amenities
-  { buildingId: "martini-bar", x: 34, y: 44, orientation: Direction.Down }, // Corner store
-  { buildingId: "tree-1", x: 45, y: 34, orientation: Direction.Down },
-  { buildingId: "tree-2", x: 45, y: 38, orientation: Direction.Down },
-  { buildingId: "tree-3", x: 45, y: 42, orientation: Direction.Down },
+  // Main stadium building (left side, x=0-5, y=36-43)
+  { buildingId: "schwab-mansion", x: 0, y: 36, orientation: Direction.Down }, // 6x8 (Stadium)
+
+  // Bottom left area (x=0-7, y=44-47)
+  { buildingId: "bus-shelter", x: 0, y: 44, orientation: Direction.Down }, // 2x1
+  { buildingId: "bus-shelter", x: 0, y: 46, orientation: Direction.Down }, // 2x1
+  { buildingId: "bus-shelter", x: 4, y: 44, orientation: Direction.Down }, // 2x1
+  { buildingId: "bus-shelter", x: 4, y: 46, orientation: Direction.Down }, // 2x1
+
+  // Right side food vendors (x=12-15, y=36-47)
+  { buildingId: "checkers", x: 12, y: 36, orientation: Direction.Down }, // 2x2 (Food vendor)
+  { buildingId: "martini-bar", x: 14, y: 36, orientation: Direction.Down }, // 2x2
+  { buildingId: "dunkin", x: 12, y: 38, orientation: Direction.Down }, // 2x2
+  { buildingId: "popeyes", x: 14, y: 38, orientation: Direction.Down }, // 2x2
+  { buildingId: "checkers", x: 12, y: 44, orientation: Direction.Down }, // 2x2
+  { buildingId: "dunkin", x: 14, y: 44, orientation: Direction.Down }, // 2x2
+  { buildingId: "popeyes", x: 12, y: 46, orientation: Direction.Down }, // 2x2
+  { buildingId: "martini-bar", x: 14, y: 46, orientation: Direction.Down }, // 2x2
+
+  // ========== RESIDENTIAL AREA (x=36-47, y=36-47) ==========
+  // Uses TileType.Grass for suburban feel
+  // Road at x=40-43 and y=40-43
+
+  // Top-left quadrant (x=36-39, y=36-39)
+  { buildingId: "sf-victorian", x: 36, y: 36, orientation: Direction.Down }, // 2x3
+  { buildingId: "full-house", x: 38, y: 36, orientation: Direction.Down }, // 2x3
+
+  // Top-right quadrant (x=44-47, y=36-39)
+  { buildingId: "blue-painted-lady", x: 44, y: 36, orientation: Direction.Down }, // 2x3
+  { buildingId: "sf-victorian-2", x: 46, y: 36, orientation: Direction.Down }, // 2x3
+
+  // Bottom-left quadrant (x=36-39, y=44-47)
+  { buildingId: "english-townhouse", x: 36, y: 44, orientation: Direction.Down }, // 2x2
+  { buildingId: "yellow-apartments", x: 38, y: 44, orientation: Direction.Down }, // 2x2
+  { buildingId: "tree-1", x: 36, y: 46, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-2", x: 39, y: 46, orientation: Direction.Down }, // 1x1
+
+  // Bottom-right quadrant (x=44-47, y=44-47)
+  { buildingId: "limestone", x: 44, y: 44, orientation: Direction.Down }, // 2x2
+  { buildingId: "strange-townhouse", x: 46, y: 44, orientation: Direction.Down }, // 2x2
+  { buildingId: "tree-3", x: 44, y: 46, orientation: Direction.Down }, // 1x1
+  { buildingId: "tree-4", x: 47, y: 46, orientation: Direction.Down }, // 1x1
 ];
 
 // ============================================================================
@@ -345,6 +414,20 @@ export function createFleetFeastCity(): GridCell[][] {
       isOrigin: true,
     }))
   );
+
+  // Apply zone-specific ground tiles
+  for (const zone of ZONES) {
+    const { bounds, tileType } = zone;
+    for (let dy = 0; dy < bounds.height; dy++) {
+      for (let dx = 0; dx < bounds.width; dx++) {
+        const px = bounds.x + dx;
+        const py = bounds.y + dy;
+        if (px < GRID_WIDTH && py < GRID_HEIGHT) {
+          grid[py][px].type = tileType;
+        }
+      }
+    }
+  }
 
   // Place road segments
   for (const seg of ROAD_SEGMENTS) {
@@ -389,8 +472,7 @@ export function createFleetFeastCity(): GridCell[][] {
     // Get footprint for the orientation
     const footprint = getBuildingFootprint(building, placement.orientation);
 
-    // Calculate origin (buildings are placed by their SE corner in the original,
-    // but we define them by top-left for simplicity)
+    // Calculate origin (buildings are placed by their top-left corner)
     const originX = placement.x;
     const originY = placement.y;
 
@@ -406,13 +488,22 @@ export function createFleetFeastCity(): GridCell[][] {
           const cell = grid[py][px];
           const isDecoration = building.category === "props" || building.isDecoration;
           if (isDecoration) {
-            // Decorations can go on grass, tile, or snow
-            if (cell.type !== TileType.Grass && cell.type !== TileType.Tile && cell.type !== TileType.Snow) {
+            // Decorations can go on grass, tile, asphalt, or snow
+            if (
+              cell.type !== TileType.Grass &&
+              cell.type !== TileType.Tile &&
+              cell.type !== TileType.Asphalt &&
+              cell.type !== TileType.Snow
+            ) {
               canPlace = false;
             }
           } else {
-            // Regular buildings only on grass
-            if (cell.type !== TileType.Grass) {
+            // Regular buildings can go on grass, tile, or asphalt (zone ground types)
+            if (
+              cell.type !== TileType.Grass &&
+              cell.type !== TileType.Tile &&
+              cell.type !== TileType.Asphalt
+            ) {
               canPlace = false;
             }
           }

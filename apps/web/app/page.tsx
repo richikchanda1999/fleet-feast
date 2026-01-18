@@ -18,10 +18,12 @@ export default function Home() {
       <div className="w-3/4 h-full">
         <GameBoard
           initialGrid={createFleetFeastCity}
-          handleBuildingClick={(buildingId, originX, originY, screenX, screenY) => {
-            console.log("Building with : {} clicked", buildingId);
+          handleBuildingClick={(buildingId: string | null, originX: number, originY: number, screenX: number, screenY: number) => {
+            if (buildingId) {
+              console.log("Building with : {} clicked", buildingId, originX, originY, screenX, screenY);
+            }
           }}
-          handleCarClick={(carId) => {
+          handleCarClick={(carId: string) => {
             console.log("Car with : {} clicked", carId);
           }}
         />
