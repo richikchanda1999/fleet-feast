@@ -1,0 +1,16 @@
+name: fleet-feast
+
+services:
+  redis:
+    image: redis:8.4.0
+    restart: always
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - 6379:6379
+    command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

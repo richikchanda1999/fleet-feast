@@ -1,275 +1,159 @@
-interface ZoneDemand {
-  id: string;
-  name: string;
-  demand: number; // 0-100
-  trend: "up" | "down" | "stable";
+"use client";
+
+import {
+  DecisionType,
+  DemandTrend,
+  GameStateOutput,
+  VehicleStatus,
+} from "@/lib/api/types.gen";
+
+interface DashboardProps {
+  gameState: GameStateOutput;
 }
 
-interface FleetVehicle {
-  id: string;
-  name: string;
-  status: "idle" | "en-route" | "delivering" | "returning";
-  currentZone?: string;
-  destination?: string;
-}
-
-interface Decision {
-  id: string;
-  timestamp: Date;
-  type: "dispatch" | "reroute" | "wait";
-  description: string;
-}
-
-// Mock data - replace with real data from props/state
-const mockZones: ZoneDemand[] = [
-  { id: "zone-1", name: "Downtown", demand: 85, trend: "up" },
-  { id: "zone-2", name: "Suburbs", demand: 45, trend: "stable" },
-  { id: "zone-3", name: "Industrial", demand: 30, trend: "down" },
-  { id: "zone-4", name: "Harbor", demand: 60, trend: "up" },
-];
-
-const mockFleet: FleetVehicle[] = [
-  { id: "car-1", name: "Taxi #1", status: "delivering", currentZone: "Downtown", destination: "Suburbs" },
-  { id: "car-2", name: "Taxi #2", status: "idle", currentZone: "Harbor" },
-  { id: "car-3", name: "Jeep #1", status: "en-route", currentZone: "Industrial", destination: "Downtown" },
-];
-
-const mockDecisions: Decision[] = [
-  { id: "d-1", timestamp: new Date(), type: "dispatch", description: "Dispatched Taxi #1 to Downtown" },
-  { id: "d-2", timestamp: new Date(Date.now() - 30000), type: "reroute", description: "Rerouted Jeep #1 via Harbor" },
-  { id: "d-3", timestamp: new Date(Date.now() - 60000), type: "wait", description: "Taxi #2 waiting for demand" },
-];
-
-const panelStyle: React.CSSProperties = {
-  background: "#B0B0B0",
-  border: "2px solid",
-  borderColor: "#D0D0D0 #707070 #707070 #D0D0D0",
-  boxShadow: "2px 2px 0px #505050",
-  padding: 0,
-  marginBottom: 12,
-};
-
-const headerStyle: React.CSSProperties = {
-  background: "linear-gradient(to bottom, #4a6fa5, #2d4a6f)",
-  color: "#fff",
-  padding: "6px 10px",
-  fontFamily: "monospace",
-  fontSize: 13,
-  fontWeight: "bold",
-  textShadow: "1px 1px 0px #000",
-  borderBottom: "2px solid #2d4a6f",
-  textTransform: "uppercase",
-  letterSpacing: 1,
-};
-
-const contentStyle: React.CSSProperties = {
-  padding: 8,
-  fontFamily: "monospace",
-  fontSize: 11,
-};
-
-function DemandBar({ demand, trend }: { demand: number; trend: "up" | "down" | "stable" }) {
-  const barColor = demand > 70 ? "#c44" : demand > 40 ? "#ca4" : "#4a4";
-  const trendIcon = trend === "up" ? "▲" : trend === "down" ? "▼" : "●";
-  const trendColor = trend === "up" ? "#4c4" : trend === "down" ? "#c44" : "#888";
+function DemandBar({ demand, trend }: { demand: number; trend: DemandTrend }) {
+  const barColorClass = demand > 70 ? "bg-red-500" : demand > 40 ? "bg-yellow-500" : "bg-green-600";
+  const trendIcon = trend === DemandTrend.UP ? "▲" : trend === DemandTrend.DOWN ? "▼" : "●";
+  const trendColorClass = trend === DemandTrend.UP ? "text-green-500" : trend === DemandTrend.DOWN ? "text-red-500" : "text-gray-500";
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div
-        style={{
-          flex: 1,
-          height: 12,
-          background: "#606060",
-          border: "1px solid",
-          borderColor: "#404040 #808080 #808080 #404040",
-        }}
-      >
+    <div className="flex items-center gap-1.5">
+      <div className="flex-1 h-3 bg-neutral-600 border border-t-neutral-700 border-l-neutral-700 border-b-neutral-400 border-r-neutral-400">
         <div
-          style={{
-            width: `${demand}%`,
-            height: "100%",
-            background: barColor,
-            transition: "width 0.3s",
-          }}
+          className={`h-full transition-all duration-300 ${barColorClass}`}
+          style={{ width: `${demand}%` }}
         />
       </div>
-      <span style={{ color: trendColor, fontSize: 10 }}>{trendIcon}</span>
-      <span style={{ width: 28, textAlign: "right", color: "#333" }}>{demand}%</span>
+      <span className={`text-[10px] ${trendColorClass}`}>{trendIcon}</span>
+      <span className="w-7 text-right text-neutral-700 text-xs">{demand}%</span>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: FleetVehicle["status"] }) {
-  const colors: Record<FleetVehicle["status"], { bg: string; text: string }> = {
-    idle: { bg: "#888", text: "#fff" },
-    "en-route": { bg: "#4a7fc4", text: "#fff" },
-    delivering: { bg: "#4a4", text: "#fff" },
-    returning: { bg: "#ca4", text: "#333" },
+function StatusBadge({ status }: { status: VehicleStatus }) {
+  const colorClasses: Record<VehicleStatus, string> = {
+    [VehicleStatus.IDLE]: "bg-gray-500 text-white",
+    [VehicleStatus.EN_ROUTE]: "bg-blue-500 text-white",
+    [VehicleStatus.DELIVERING]: "bg-green-600 text-white",
+    [VehicleStatus.RETURNING]: "bg-yellow-500 text-neutral-800",
   };
-
-  const { bg, text } = colors[status];
 
   return (
     <span
-      style={{
-        background: bg,
-        color: text,
-        padding: "2px 6px",
-        fontSize: 9,
-        fontWeight: "bold",
-        textTransform: "uppercase",
-        border: "1px solid",
-        borderColor: "#fff3 #0003 #0003 #fff3",
-      }}
+      className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border border-t-white/20 border-l-white/20 border-b-black/20 border-r-black/20 ${colorClasses[status]}`}
     >
       {status}
     </span>
   );
 }
 
-function DecisionIcon({ type }: { type: Decision["type"] }) {
-  const icons: Record<Decision["type"], { symbol: string; color: string }> = {
-    dispatch: { symbol: "→", color: "#4a4" },
-    reroute: { symbol: "↻", color: "#ca4" },
-    wait: { symbol: "◼", color: "#888" },
+function DecisionIcon({ type }: { type: DecisionType }) {
+  const config: Record<DecisionType, { symbol: string; colorClass: string }> = {
+    [DecisionType.DISPATCH]: { symbol: "→", colorClass: "bg-green-600" },
+    [DecisionType.REROUTE]: { symbol: "↻", colorClass: "bg-yellow-500" },
+    [DecisionType.WAIT]: { symbol: "◼", colorClass: "bg-gray-500" },
   };
 
-  const { symbol, color } = icons[type];
+  const { symbol, colorClass } = config[type];
 
   return (
     <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 18,
-        height: 18,
-        background: color,
-        color: "#fff",
-        fontWeight: "bold",
-        fontSize: 12,
-        border: "1px solid",
-        borderColor: "#fff3 #0003 #0003 #fff3",
-      }}
+      className={`inline-flex items-center justify-center w-4.5 h-4.5 text-white font-bold text-xs border border-t-white/20 border-l-white/20 border-b-black/20 border-r-black/20 ${colorClass}`}
     >
       {symbol}
     </span>
   );
 }
 
-export default function Dashboard() {
+export default function Dashboard({ gameState }: DashboardProps) {
+  const zoneDemands = gameState.zoneDemands ?? [];
+  const trucks = gameState.trucks ?? [];
+  const decisions = gameState.decisions ?? [];
+
   return (
-    <div
-      style={{
-        height: "100%",
-        background: "#4a5d6a",
-        padding: 12,
-        display: "flex",
-        flexDirection: "column",
-        gap: 0,
-        fontFamily: "monospace",
-      }}
-    >
+    <div className="h-full bg-slate-600 p-3 flex flex-col font-mono">
       {/* Title */}
-      <div
-        style={{
-          ...panelStyle,
-          background: "linear-gradient(to bottom, #3a4a5a, #2a3a4a)",
-          padding: "10px 12px",
-          textAlign: "center",
-          marginBottom: 16,
-        }}
-      >
-        <h1
-          style={{
-            color: "#fff",
-            fontSize: 16,
-            fontWeight: "bold",
-            textShadow: "2px 2px 0px #000",
-            margin: 0,
-            letterSpacing: 2,
-            textTransform: "uppercase",
-          }}
-        >
+      <div className="bg-linear-to-b from-slate-700 to-slate-800 border-2 border-t-neutral-300 border-l-neutral-300 border-b-neutral-500 border-r-neutral-500 shadow-md px-3 py-2.5 text-center mb-4">
+        <h1 className="text-white text-base font-bold drop-shadow-[2px_2px_0px_#000] tracking-widest uppercase m-0">
           Fleet Command
         </h1>
       </div>
 
       {/* Zone Demand Section */}
-      <div style={panelStyle}>
-        <div style={headerStyle}>Zone Demand</div>
-        <div style={contentStyle}>
-          {mockZones.map((zone) => (
-            <div key={zone.id} style={{ marginBottom: 8 }}>
-              <div style={{ color: "#333", marginBottom: 2 }}>{zone.name}</div>
-              <DemandBar demand={zone.demand} trend={zone.trend} />
-            </div>
-          ))}
+      <div className="bg-neutral-400 border-2 border-t-neutral-300 border-l-neutral-300 border-b-neutral-500 border-r-neutral-500 shadow-md mb-3">
+        <div className="bg-linear-to-b from-blue-600 to-blue-800 text-white px-2.5 py-1.5 font-mono text-[13px] font-bold drop-shadow-[1px_1px_0px_#000] border-b-2 border-blue-800 uppercase tracking-wide">
+          Zone Demand
+        </div>
+        <div className="p-2 font-mono text-[11px]">
+          {zoneDemands.length > 0 ? (
+            zoneDemands.map((zone) => (
+              <div key={zone.id} className="mb-2">
+                <div className="text-neutral-700 mb-0.5">{zone.name}</div>
+                <DemandBar demand={zone.demand} trend={zone.trend} />
+              </div>
+            ))
+          ) : (
+            <div className="text-neutral-500 text-center py-2">No zone data</div>
+          )}
         </div>
       </div>
 
       {/* Fleet Status Section */}
-      <div style={panelStyle}>
-        <div style={headerStyle}>Fleet Status</div>
-        <div style={contentStyle}>
-          {mockFleet.map((vehicle) => (
-            <div
-              key={vehicle.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "6px 0",
-                borderBottom: "1px solid #999",
-              }}
-            >
-              <span style={{ flex: 1, color: "#333", fontWeight: "bold" }}>{vehicle.name}</span>
-              <StatusBadge status={vehicle.status} />
-            </div>
-          ))}
-          <div
-            style={{
-              marginTop: 8,
-              padding: "6px 8px",
-              background: "#9a9a9a",
-              border: "1px solid",
-              borderColor: "#808080 #c0c0c0 #c0c0c0 #808080",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#333" }}>
-              <span>Active:</span>
-              <span style={{ fontWeight: "bold" }}>
-                {mockFleet.filter((v) => v.status !== "idle").length}/{mockFleet.length}
-              </span>
-            </div>
-          </div>
+      <div className="bg-neutral-400 border-2 border-t-neutral-300 border-l-neutral-300 border-b-neutral-500 border-r-neutral-500 shadow-md mb-3">
+        <div className="bg-linear-to-b from-blue-600 to-blue-800 text-white px-2.5 py-1.5 font-mono text-[13px] font-bold drop-shadow-[1px_1px_0px_#000] border-b-2 border-blue-800 uppercase tracking-wide">
+          Fleet Status
+        </div>
+        <div className="p-2 font-mono text-[11px]">
+          {trucks.length > 0 ? (
+            <>
+              {trucks.map((vehicle) => (
+                <div
+                  key={vehicle.id}
+                  className="flex items-center gap-2 py-1.5 border-b border-neutral-500"
+                >
+                  <span className="flex-1 text-neutral-700 font-bold">{vehicle.name}</span>
+                  <StatusBadge status={vehicle.status} />
+                </div>
+              ))}
+              <div className="mt-2 px-2 py-1.5 bg-neutral-500 border border-t-neutral-400 border-l-neutral-400 border-b-neutral-300 border-r-neutral-300">
+                <div className="flex justify-between text-neutral-700">
+                  <span>Active:</span>
+                  <span className="font-bold">
+                    {trucks.filter((v) => v.status !== VehicleStatus.IDLE).length}/{trucks.length}
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-neutral-500 text-center py-2">No trucks deployed</div>
+          )}
         </div>
       </div>
 
       {/* Decisions Section */}
-      <div style={{ ...panelStyle, flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <div style={headerStyle}>Recent Decisions</div>
-        <div style={{ ...contentStyle, flex: 1, overflowY: "auto" }}>
-          {mockDecisions.map((decision) => (
-            <div
-              key={decision.id}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 8,
-                padding: "6px 0",
-                borderBottom: "1px solid #999",
-              }}
-            >
-              <DecisionIcon type={decision.type} />
-              <div style={{ flex: 1 }}>
-                <div style={{ color: "#333", fontSize: 10 }}>{decision.description}</div>
-                <div style={{ color: "#666", fontSize: 9 }}>
-                  {decision.timestamp.toLocaleTimeString()}
+      <div className="bg-neutral-400 border-2 border-t-neutral-300 border-l-neutral-300 border-b-neutral-500 border-r-neutral-500 shadow-md flex-1 flex flex-col min-h-0">
+        <div className="bg-linear-to-b from-blue-600 to-blue-800 text-white px-2.5 py-1.5 font-mono text-[13px] font-bold drop-shadow-[1px_1px_0px_#000] border-b-2 border-blue-800 uppercase tracking-wide">
+          Recent Decisions
+        </div>
+        <div className="p-2 font-mono text-[11px] flex-1 overflow-y-auto">
+          {decisions.length > 0 ? (
+            decisions.map((decision) => (
+              <div
+                key={decision.id}
+                className="flex items-start gap-2 py-1.5 border-b border-neutral-500"
+              >
+                <DecisionIcon type={decision.type} />
+                <div className="flex-1">
+                  <div className="text-neutral-700 text-[10px]">{decision.description}</div>
+                  <div className="text-neutral-500 text-[9px]">
+                    {new Date(decision.timestamp).toLocaleTimeString()}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <div className="text-neutral-500 text-center py-2">No decisions yet</div>
+          )}
         </div>
       </div>
     </div>
