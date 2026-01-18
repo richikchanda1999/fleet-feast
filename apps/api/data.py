@@ -1,0 +1,192 @@
+DEFAULT_ZONES: list[dict] = [
+    {
+        "id": "downtown",
+        "name": "Downtown Office District",
+        "description": "Dense office buildings with high lunch rush demand",
+        "color": "#3B82F6",
+        "tileType": "Tile",
+        "bounds": {"x": 20, "y": 20, "width": 12, "height": 12},
+        "demandPattern": {
+            "peakHours": [11, 12, 13],
+            "baseMultiplier": 0.2,
+            "peakMultiplier": 1.0,
+            "description": "Heavy lunch rush from office workers",
+        },
+        "parkingSpots": [
+            {"x": 22, "y": 22, "name": "Office Plaza", "capacity": 2},
+            {"x": 28, "y": 28, "name": "Corporate Corner", "capacity": 1},
+        ],
+    },
+    {
+        "id": "university",
+        "name": "University Campus",
+        "description": "Academic buildings with student-driven demand",
+        "color": "#DC2626",
+        "tileType": "Grass",
+        "bounds": {"x": 0, "y": 0, "width": 16, "height": 16},
+        "demandPattern": {
+            "peakHours": [11, 12, 13, 18, 19, 20],
+            "baseMultiplier": 0.3,
+            "peakMultiplier": 0.85,
+            "description": "Students hungry at lunch and dinner",
+        },
+        "parkingSpots": [
+            {"x": 6, "y": 6, "name": "Library Quad", "capacity": 2},
+            {"x": 10, "y": 2, "name": "Student Center", "capacity": 1},
+        ],
+    },
+    {
+        "id": "park",
+        "name": "Central Park",
+        "description": "Green space with recreational visitors",
+        "color": "#22C55E",
+        "tileType": "Grass",
+        "bounds": {"x": 36, "y": 0, "width": 12, "height": 16},
+        "demandPattern": {
+            "peakHours": [12, 17, 18, 19],
+            "baseMultiplier": 0.15,
+            "peakMultiplier": 0.7,
+            "description": "Picnickers and joggers",
+        },
+        "parkingSpots": [
+            {"x": 40, "y": 6, "name": "Pavilion Area", "capacity": 2},
+        ],
+    },
+    {
+        "id": "stadium",
+        "name": "Sports Stadium",
+        "description": "Large arena with event-driven demand spikes",
+        "color": "#F97316",
+        "tileType": "Asphalt",
+        "bounds": {"x": 0, "y": 36, "width": 16, "height": 12},
+        "demandPattern": {
+            "peakHours": [18, 19, 20, 21],
+            "baseMultiplier": 0.05,
+            "peakMultiplier": 1.0,
+            "description": "Sporadic but intense event crowds",
+        },
+        "parkingSpots": [
+            {"x": 6, "y": 40, "name": "Stadium Gate", "capacity": 3},
+        ],
+    },
+    {
+        "id": "residential",
+        "name": "Residential Area",
+        "description": "Homes and apartments with evening dinner demand",
+        "color": "#A855F7",
+        "tileType": "Grass",
+        "bounds": {"x": 36, "y": 36, "width": 12, "height": 12},
+        "demandPattern": {
+            "peakHours": [17, 18, 19, 20],
+            "baseMultiplier": 0.25,
+            "peakMultiplier": 0.8,
+            "description": "Families wanting dinner convenience",
+        },
+        "parkingSpots": [
+            {"x": 40, "y": 40, "name": "Community Corner", "capacity": 1},
+            {"x": 44, "y": 38, "name": "Apartment Complex", "capacity": 1},
+        ],
+    },
+]
+
+DEFAULT_ROAD_SEGMENTS: list[dict] = [
+    # Main horizontal artery at y=16
+    {"x": 0, "y": 16}, {"x": 4, "y": 16}, {"x": 8, "y": 16}, {"x": 12, "y": 16},
+    {"x": 16, "y": 16}, {"x": 20, "y": 16}, {"x": 24, "y": 16}, {"x": 28, "y": 16},
+    {"x": 32, "y": 16}, {"x": 36, "y": 16}, {"x": 40, "y": 16}, {"x": 44, "y": 16},
+    # Main horizontal artery at y=32
+    {"x": 0, "y": 32}, {"x": 4, "y": 32}, {"x": 8, "y": 32}, {"x": 12, "y": 32},
+    {"x": 16, "y": 32}, {"x": 20, "y": 32}, {"x": 24, "y": 32}, {"x": 28, "y": 32},
+    {"x": 32, "y": 32}, {"x": 36, "y": 32}, {"x": 40, "y": 32}, {"x": 44, "y": 32},
+    # Main vertical artery at x=16
+    {"x": 16, "y": 0}, {"x": 16, "y": 4}, {"x": 16, "y": 8}, {"x": 16, "y": 12},
+    {"x": 16, "y": 20}, {"x": 16, "y": 24}, {"x": 16, "y": 28},
+    {"x": 16, "y": 36}, {"x": 16, "y": 40}, {"x": 16, "y": 44},
+    # Main vertical artery at x=32
+    {"x": 32, "y": 0}, {"x": 32, "y": 4}, {"x": 32, "y": 8}, {"x": 32, "y": 12},
+    {"x": 32, "y": 20}, {"x": 32, "y": 24}, {"x": 32, "y": 28},
+    {"x": 32, "y": 36}, {"x": 32, "y": 40}, {"x": 32, "y": 44},
+    # Downtown internal roads
+    {"x": 20, "y": 24}, {"x": 24, "y": 24}, {"x": 28, "y": 24},
+    {"x": 24, "y": 20}, {"x": 24, "y": 28},
+    # University campus access roads
+    {"x": 8, "y": 0}, {"x": 8, "y": 4}, {"x": 8, "y": 8}, {"x": 8, "y": 12},
+    {"x": 0, "y": 8}, {"x": 4, "y": 8}, {"x": 12, "y": 8},
+    # Park access roads
+    {"x": 40, "y": 0}, {"x": 40, "y": 4}, {"x": 40, "y": 8}, {"x": 40, "y": 12},
+    # Stadium access roads
+    {"x": 8, "y": 36}, {"x": 8, "y": 40}, {"x": 8, "y": 44},
+    # Residential access roads
+    {"x": 40, "y": 36}, {"x": 40, "y": 40}, {"x": 40, "y": 44}, {"x": 44, "y": 40},
+]
+
+DEFAULT_BUILDING_PLACEMENTS: list[dict] = [
+    # Downtown Office District
+    {"buildingId": "promptlayer-office", "x": 20, "y": 20, "orientation": "Down"},
+    {"buildingId": "dunkin", "x": 20, "y": 28, "orientation": "Down"},
+    {"buildingId": "palo-alto-office-center", "x": 26, "y": 20, "orientation": "Down"},
+    {"buildingId": "general-intelligence-office", "x": 26, "y": 26, "orientation": "Down"},
+    {"buildingId": "popeyes", "x": 30, "y": 29, "orientation": "Down"},
+    # University Campus
+    {"buildingId": "internet-archive", "x": 0, "y": 0, "orientation": "Down"},
+    {"buildingId": "tree-1", "x": 7, "y": 0, "orientation": "Down"},
+    {"buildingId": "tree-2", "x": 7, "y": 2, "orientation": "Down"},
+    {"buildingId": "fountain", "x": 6, "y": 4, "orientation": "Down"},
+    {"buildingId": "private-school", "x": 12, "y": 0, "orientation": "Right"},
+    {"buildingId": "tree-3", "x": 15, "y": 0, "orientation": "Down"},
+    {"buildingId": "bookstore", "x": 0, "y": 12, "orientation": "Down"},
+    {"buildingId": "modern-bench", "x": 5, "y": 12, "orientation": "Down"},
+    {"buildingId": "modern-bench", "x": 5, "y": 14, "orientation": "Down"},
+    {"buildingId": "80s-apartment", "x": 12, "y": 12, "orientation": "Down"},
+    {"buildingId": "tree-4", "x": 15, "y": 15, "orientation": "Down"},
+    # Central Park
+    {"buildingId": "fountain", "x": 36, "y": 2, "orientation": "Down"},
+    {"buildingId": "tree-1", "x": 36, "y": 5, "orientation": "Down"},
+    {"buildingId": "tree-2", "x": 38, "y": 5, "orientation": "Down"},
+    {"buildingId": "victorian-bench", "x": 36, "y": 7, "orientation": "Down"},
+    {"buildingId": "victorian-bench", "x": 38, "y": 7, "orientation": "Down"},
+    {"buildingId": "tree-3", "x": 36, "y": 10, "orientation": "Down"},
+    {"buildingId": "tree-4", "x": 38, "y": 10, "orientation": "Down"},
+    {"buildingId": "park-table", "x": 36, "y": 12, "orientation": "Down"},
+    {"buildingId": "park-table", "x": 38, "y": 12, "orientation": "Down"},
+    {"buildingId": "tree-1", "x": 36, "y": 14, "orientation": "Down"},
+    {"buildingId": "tree-2", "x": 38, "y": 14, "orientation": "Down"},
+    {"buildingId": "tree-3", "x": 44, "y": 0, "orientation": "Down"},
+    {"buildingId": "tree-4", "x": 46, "y": 0, "orientation": "Down"},
+    {"buildingId": "tree-1", "x": 44, "y": 3, "orientation": "Down"},
+    {"buildingId": "tree-2", "x": 46, "y": 3, "orientation": "Down"},
+    {"buildingId": "statue", "x": 45, "y": 6, "orientation": "Down"},
+    {"buildingId": "tree-3", "x": 44, "y": 9, "orientation": "Down"},
+    {"buildingId": "tree-4", "x": 46, "y": 9, "orientation": "Down"},
+    {"buildingId": "victorian-bench", "x": 44, "y": 12, "orientation": "Down"},
+    {"buildingId": "tree-1", "x": 46, "y": 12, "orientation": "Down"},
+    {"buildingId": "tree-2", "x": 44, "y": 14, "orientation": "Down"},
+    {"buildingId": "tree-3", "x": 46, "y": 14, "orientation": "Down"},
+    # Stadium Area
+    {"buildingId": "schwab-mansion", "x": 0, "y": 36, "orientation": "Down"},
+    {"buildingId": "bus-shelter", "x": 0, "y": 44, "orientation": "Down"},
+    {"buildingId": "bus-shelter", "x": 0, "y": 46, "orientation": "Down"},
+    {"buildingId": "bus-shelter", "x": 4, "y": 44, "orientation": "Down"},
+    {"buildingId": "bus-shelter", "x": 4, "y": 46, "orientation": "Down"},
+    {"buildingId": "checkers", "x": 12, "y": 36, "orientation": "Down"},
+    {"buildingId": "martini-bar", "x": 14, "y": 36, "orientation": "Down"},
+    {"buildingId": "dunkin", "x": 12, "y": 38, "orientation": "Down"},
+    {"buildingId": "popeyes", "x": 14, "y": 38, "orientation": "Down"},
+    {"buildingId": "checkers", "x": 12, "y": 44, "orientation": "Down"},
+    {"buildingId": "dunkin", "x": 14, "y": 44, "orientation": "Down"},
+    {"buildingId": "popeyes", "x": 12, "y": 46, "orientation": "Down"},
+    {"buildingId": "martini-bar", "x": 14, "y": 46, "orientation": "Down"},
+    # Residential Area
+    {"buildingId": "sf-victorian", "x": 36, "y": 36, "orientation": "Down"},
+    {"buildingId": "full-house", "x": 38, "y": 36, "orientation": "Down"},
+    {"buildingId": "blue-painted-lady", "x": 44, "y": 36, "orientation": "Down"},
+    {"buildingId": "sf-victorian-2", "x": 46, "y": 36, "orientation": "Down"},
+    {"buildingId": "english-townhouse", "x": 36, "y": 44, "orientation": "Down"},
+    {"buildingId": "yellow-apartments", "x": 38, "y": 44, "orientation": "Down"},
+    {"buildingId": "tree-1", "x": 36, "y": 46, "orientation": "Down"},
+    {"buildingId": "tree-2", "x": 39, "y": 46, "orientation": "Down"},
+    {"buildingId": "limestone", "x": 44, "y": 44, "orientation": "Down"},
+    {"buildingId": "strange-townhouse", "x": 46, "y": 44, "orientation": "Down"},
+    {"buildingId": "tree-3", "x": 44, "y": 46, "orientation": "Down"},
+    {"buildingId": "tree-4", "x": 47, "y": 46, "orientation": "Down"},
+]
