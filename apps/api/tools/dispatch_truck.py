@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from redis_client import enqueue
-
+from config import config
+from models import State
 
 class DispatchTruckSchema(BaseModel):
     truck_id: str = Field(
@@ -15,11 +16,12 @@ class DispatchTruckSchema(BaseModel):
     )
 
 
-async def dispatch_truck(truck_id: str, destination_zone: str, reasoning: str):
+async def dispatch_truck(state: State, truck_id: str, destination_zone: str, reasoning: str):
     return await enqueue(
-        "pending_actions",
+        config.pending_actions_queue,
         {
             "action": "dispatch_truck",
+            "current_time": state.current_time,
             "truck_id": truck_id,
             "destination_zone": destination_zone,
             "reasoning": reasoning,

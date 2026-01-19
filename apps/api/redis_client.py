@@ -37,23 +37,18 @@ async def enqueue(queue_name: str, message: Any) -> int:
     return push_res
 
 
-async def dequeue(queue_name: str, timeout: int = 0) -> Optional[Any]:
+async def dequeue(queue_name: str) -> Optional[Any]:
     """
     Remove and return a message from the queue.
     If timeout > 0, blocks until a message is available or timeout expires.
     Returns None if queue is empty (or timeout expires).
     """
     client = await get_redis()
-    if timeout > 0:
-        result = client.brpop([queue_name], timeout=timeout)
-        if isinstance(result, Awaitable):
-            result = await result
-        return json.loads(result[1]) if result else None
-    else:
-        result = client.rpop(queue_name)
-        if isinstance(result, Awaitable):
-            result = await result
-        return json.loads(result) if isinstance(result, str) else None
+    result = client.rpop(queue_name)
+    if isinstance(result, Awaitable):
+        result = await result
+    return json.loads(result) if isinstance(result, str) else None
+        
 
 
 async def peek(queue_name: str) -> Optional[Any]:

@@ -11,6 +11,7 @@ class Config(BaseSettings):
     game_state_key: str = "fleet_feast:game_state"
 
     game_state_key: str = ""
+    pending_actions_queue: str = ""
 
     class Config:
         env_file = ".env"

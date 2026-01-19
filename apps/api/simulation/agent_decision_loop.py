@@ -1,5 +1,5 @@
 import asyncio
-from redis_client import get_redis
+from redis_client import get_redis, queue_length
 from config import config
 from utils import from_seconds
 from models import State, Zone
@@ -131,9 +131,12 @@ async def agent_decision_loop():
         # 1. Snapshot the current GAME_STATE
         # 2. Send to LLM: "Here is the state, what should we do?"
         # 3. Parse Tool Call (e.g., "move_truck(t1, 'stadium')")
-        # 4. Update GAME_STATE based on decision
 
         try:
+            pending_actions_length = await queue_length(config.pending_actions_queue)
+            if pending_actions_length > 0:
+                continue
+            
             state = await client.get(config.game_state_key)
             if not state:
                 continue
@@ -162,22 +165,16 @@ async def agent_decision_loop():
 
                 messages.append(response.message)
 
-                print("Content: ", response.message.content)
-                print("Tool calls: ", response.message.tool_calls)
                 if response.message.tool_calls:
                     for tc in response.message.tool_calls:
                         if tc.function.name in available_functions:
                             print(
                                 f"Calling {tc.function.name} with arguments {tc.function.arguments}"
                             )
-                            if tc.function.name == "get_zone_forecast":
-                                result = get_zone_forecast(
-                                    state=state, **tc.function.arguments
-                                )
-                            else:
-                                result = available_functions[tc.function.name](
-                                    **tc.function.arguments
-                                )
+                            result = await available_functions[tc.function.name](
+                                state=state, **tc.function.arguments
+                            )
+
                             print(f"Result: {result}")
                             # add the tool result to the messages
                             messages.append(
@@ -190,6 +187,8 @@ async def agent_decision_loop():
                 else:
                     break
 
-            await asyncio.sleep(10)  # Agent thinks every 30 seconds
         except Exception as e:
             print(f"Error in agent_decision_loop: {e}")
+
+        finally:
+            await asyncio.sleep(30)  # Agent thinks every 30 seconds
