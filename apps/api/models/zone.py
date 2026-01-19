@@ -16,3 +16,7 @@ class Zone(BaseModel):
 
     costs: dict[str, float]
     num_of_parking_spots: int
+
+    demand: list[float] = [-1] * (24 * 60)
+    max_orders: int
+    peak_hours: list[tuple[int, int]]

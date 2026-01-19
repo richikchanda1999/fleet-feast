@@ -15,9 +15,9 @@ async def agent_decision_loop():
 
         try:
             state = await client.get(config.game_state_key)
-            print(f"In agent decision loop. State from Redis: {state}")
             if not state:
                 continue
+
             state = State.model_validate_json(state)
             print(
                 "In agent decision loop! Current time - ",

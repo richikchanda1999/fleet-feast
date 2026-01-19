@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from .truck import Truck
 from .zone import Zone, ZoneType
-from utils import to_seconds
+from utils import to_minutes
 
 
 class State(BaseModel):
@@ -13,50 +13,69 @@ class State(BaseModel):
             type=ZoneType.DOWNTOWN,
             base_demand=1.0,
             costs={
-                "university-1": to_seconds(minutes=10),
-                "park-1": to_seconds(minutes=15),
-                "residential-1": to_seconds(minutes=30),
+                "university-1": to_minutes(minutes=10),
+                "park-1": to_minutes(minutes=15),
+                "residential-1": to_minutes(minutes=30),
             },
             num_of_parking_spots=2,
+            max_orders=300,
+            peak_hours=[
+                (to_minutes(hours=11, minutes=30), to_minutes(hours=14, minutes=00))
+            ],
         ),
         Zone(
             id="university-1",
             type=ZoneType.UNIVERSITY,
             base_demand=0.6,
             costs={
-                "downtown-1": to_seconds(minutes=10),
-                "residential-1": to_seconds(minutes=15),
+                "downtown-1": to_minutes(minutes=10),
+                "residential-1": to_minutes(minutes=15),
             },
             num_of_parking_spots=1,
+            max_orders=200,
+            peak_hours=[
+                (to_minutes(hours=22, minutes=00), to_minutes(hours=1, minutes=00)),
+                (to_minutes(hours=15, minutes=00), to_minutes(hours=17, minutes=00)),
+            ],
         ),
         Zone(
             id="park-1",
             type=ZoneType.PARK,
             base_demand=0.4,
             costs={
-                "downtown-1": to_seconds(minutes=15),
-                "residential-1": to_seconds(minutes=10),
-                "stadium-1": to_seconds(minutes=20),
+                "downtown-1": to_minutes(minutes=15),
+                "residential-1": to_minutes(minutes=10),
+                "stadium-1": to_minutes(minutes=20),
             },
             num_of_parking_spots=1,
+            max_orders=200,
+            peak_hours=[
+                (to_minutes(hours=16, minutes=00), to_minutes(hours=18, minutes=00))
+            ],
         ),
         Zone(
             id="residential-1",
             type=ZoneType.RESIDENTIAL,
             base_demand=0.8,
             costs={
-                "park-1": to_seconds(minutes=10),
-                "university-1": to_seconds(minutes=15),
-                "downtown-1": to_seconds(minutes=30),
+                "park-1": to_minutes(minutes=10),
+                "university-1": to_minutes(minutes=15),
+                "downtown-1": to_minutes(minutes=30),
             },
             num_of_parking_spots=2,
+            max_orders=200,
+            peak_hours=[
+                (to_minutes(hours=19, minutes=00), to_minutes(hours=21, minutes=30))
+            ],
         ),
         Zone(
             id="stadium-1",
             type=ZoneType.STADIUM,
             base_demand=0.0,
-            costs={"park-1": to_seconds(minutes=20)},
+            costs={"park-1": to_minutes(minutes=20)},
             num_of_parking_spots=1,
+            max_orders=0,
+            peak_hours=[],
         ),
     ]
 
@@ -67,7 +86,7 @@ class State(BaseModel):
             inventory=150,
             max_inventory=200,
             speed_multiplier=0.5,
-            arrival_time=to_seconds(hours=9, minutes=30),
+            arrival_time=to_minutes(hours=00, minutes=00),
         ),
         Truck(
             id="truck-2",
@@ -75,7 +94,7 @@ class State(BaseModel):
             inventory=70,
             max_inventory=100,
             speed_multiplier=1.0,
-            arrival_time=to_seconds(hours=7, minutes=00),
+            arrival_time=to_minutes(hours=00, minutes=00),
         ),
         Truck(
             id="truck-3",
@@ -83,6 +102,6 @@ class State(BaseModel):
             inventory=50,
             max_inventory=50,
             speed_multiplier=0.8,
-            arrival_time=to_seconds(hours=8, minutes=00),
+            arrival_time=to_minutes(hours=00, minutes=00),
         ),
     ]
