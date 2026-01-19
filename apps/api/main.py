@@ -5,7 +5,7 @@ from typing import Awaitable
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from config import config
-from models.state import State
+from models import State
 from redis_client import get_redis, close_redis
 from simulation import game_loop, agent_decision_loop
 

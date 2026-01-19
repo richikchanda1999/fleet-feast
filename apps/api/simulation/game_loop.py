@@ -1,22 +1,9 @@
 import asyncio
-import numpy as np
 
-from utils import from_seconds
+from utils import from_seconds, get_demand
 from redis_client import get_redis
 from config import config
-from models.state import State
-from models.truck import TruckStatus
-
-
-def get_demand(
-    minute_of_the_day: int, peak_time: int, max_orders: int, base_demand: float
-):
-    gaussian_demand = max_orders * np.exp(
-        -((minute_of_the_day - peak_time) ** 2) / (2 * base_demand**2)
-    )
-    noise = max(np.random.normal(0, 2, 24).mean(), 0)
-
-    return gaussian_demand + noise
+from models import State, TruckStatus
 
 
 async def game_loop():
