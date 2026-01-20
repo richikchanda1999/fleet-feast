@@ -1,5 +1,7 @@
 # Fleet Feast
 
+> **Work In Progress:** Core agents and tool definitions are implemented. Currently refining the optimization logic and frontend integration.
+
 An AI-coordinated food truck logistics simulation. This project demonstrates how a large language model can make real-time strategic decisions to manage a fleet of food trucks across a dynamic city environment.
 
 The core idea: drop an LLM into a simulated city with three food trucks, varying customer demand across five zones, and see if it can figure out how to maximize revenue.
