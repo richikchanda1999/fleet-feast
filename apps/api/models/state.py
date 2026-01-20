@@ -1,5 +1,5 @@
 from pydantic import BaseModel, model_validator
-from .truck import Truck
+from .truck import Truck, RestockingCost
 from .zone import Zone, ZoneType
 from utils import to_minutes
 
@@ -88,6 +88,7 @@ class State(BaseModel):
             max_inventory=200,
             speed_multiplier=0.5,
             arrival_time=to_minutes(hours=00, minutes=00),
+            restocking_cost=RestockingCost(fixed_cost=100, price_per_unit=3)
         ),
         Truck(
             id="truck-2",
@@ -96,6 +97,7 @@ class State(BaseModel):
             max_inventory=100,
             speed_multiplier=1.0,
             arrival_time=to_minutes(hours=00, minutes=00),
+            restocking_cost=RestockingCost(fixed_cost=50, price_per_unit=2)
         ),
         Truck(
             id="truck-3",
@@ -104,6 +106,7 @@ class State(BaseModel):
             max_inventory=50,
             speed_multiplier=0.8,
             arrival_time=to_minutes(hours=00, minutes=00),
+            restocking_cost=RestockingCost(fixed_cost=60, price_per_unit=1)
         ),
     ]
 

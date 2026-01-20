@@ -8,7 +8,9 @@ from tools import DispatchTruckSchema, RestockInventorySchema, HoldPositionSchem
 
 
 def process_action(state: State, action: str, action_time: int, payload: dict):
-    print(f"Processing action: {action} (Action time: {action_time}). Payload: {payload}")
+    print(
+        f"Processing action: {action} (Action time: {action_time}). Payload: {payload}"
+    )
     if abs(state.current_time - action_time) > 5:
         # The action is stale, no need to process it
         return
@@ -92,15 +94,36 @@ async def game_loop():
                     and truck.restocking_finish_time
                     and state.current_time >= truck.restocking_finish_time
                 ):
+                    units_restocked, cost = truck.restock()
+                    if units_restocked > 0:
+                        print(f"Truck {truck.id} restocked {units_restocked} units for ${cost:.2f}")
+                    else:
+                        print(f"Truck {truck.id} couldn't afford to restock")
+                    
                     truck.status = TruckStatus.SERVING
                     truck.restocking_finish_time = None
-                    truck.inventory = truck.max_inventory
 
                 # Deplete Inventory (if status == 'serving')
                 elif truck.status == TruckStatus.SERVING:
                     if truck.inventory > 0:
-                        truck.inventory -= 1  # TODO: Make this variable
-                        truck.total_revenue += 100  # TODO: Make this variable
+                        zone = next(
+                            (z for z in state.zones if z.id == truck.current_zone), None
+                        )
+                        if zone:
+                            depletion_rate = (
+                                zone.demand[state.current_time] / zone.base_demand
+                            )
+                            truck.sales_accummulator += depletion_rate
+
+                            units_to_sell = int(truck.sales_accummulator)
+                            if units_to_sell >= 1:
+                                units_to_sell = min(units_to_sell, truck.inventory)
+                                truck.sales_accummulator -= units_to_sell
+                                truck.inventory -= units_to_sell
+
+                                price_per_unit = 100 * depletion_rate
+                                price_per_unit = max(50, min(200, price_per_unit))
+                                truck.total_revenue += price_per_unit * units_to_sell
 
                 # Check for 'Arrivals'
                 elif (

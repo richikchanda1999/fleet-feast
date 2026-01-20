@@ -8,6 +8,10 @@ class TruckStatus(str, Enum):
     MOVING = "MOVING"       # On the road (earning $0)
     RESTOCKING = "RESTOCKING" # Waiting for inventory
 
+class RestockingCost(BaseModel):
+    fixed_cost: int
+    price_per_unit: int
+
 class Truck(BaseModel):
     id: str
     
@@ -22,10 +26,45 @@ class Truck(BaseModel):
     arrival_time: int
 
     restocking_finish_time: Optional[int] = None
+    restocking_cost: RestockingCost
+    sales_accummulator: float = 0.0
     
     total_revenue: float = 0.0
 
     @property
     def is_available(self):
         return self.status == TruckStatus.SERVING or self.status == TruckStatus.IDLE
+    
+    def get_max_restockable_units(self) -> int:
+        units_needed = self.max_inventory - self.inventory
+        
+        if self.total_revenue < self.restocking_cost.fixed_cost or units_needed <= 0:
+            return 0
+        
+        remaining = self.total_revenue - self.restocking_cost.fixed_cost
+        max_affordable = int(remaining // self.restocking_cost.price_per_unit)
+        
+        return min(units_needed, max_affordable)
+    
+    def get_restocking_cost(self, units: Optional[int] = None) -> float:
+        if units is None:
+            units = self.max_inventory - self.inventory
+        
+        if units <= 0:
+            return 0
+        
+        return self.restocking_cost.fixed_cost + (self.restocking_cost.price_per_unit * units)
+    
+    def restock(self) -> tuple[int, float]:
+        """Perform restocking, returns (units_restocked, cost)."""
+        units = self.get_max_restockable_units()
+        
+        if units <= 0:
+            return (0, 0)
+        
+        cost = self.get_restocking_cost(units)
+        self.inventory += units
+        self.total_revenue -= cost
+        
+        return (units, cost)
     

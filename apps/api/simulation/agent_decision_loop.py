@@ -2,7 +2,7 @@ import asyncio
 from redis_client import get_redis, queue_length
 from config import config
 from utils import from_seconds
-from models import State, Zone
+from models import State, Zone, TruckStatus
 from tools import (
     dispatch_truck,
     get_zone_forecast,
@@ -36,14 +36,16 @@ def generate_user_prompt(state: State) -> Message:
     report.append("FLEET STATUS:")
     for t in state.trucks:
         # Determine status based on arrival time
-        status = "MOVING" if t.arrival_time > state.current_time else "IDLE/SERVING"
-        eta = f"(ETA: {format_time(t.arrival_time)})" if status == "MOVING" else ""
+        eta = f"(ETA: {format_time(t.arrival_time)})" if t.status == TruckStatus.MOVING else ""
+        restocking_eta = f"(ETA: {format_time(t.restocking_finish_time)})" if TruckStatus.RESTOCKING and t.restocking_finish_time else ""
 
         report.append(
             f"- {t.id} ({t.speed_multiplier}x speed): "
             f"Loc: {t.current_zone} | "
             f"Inv: {t.inventory}/{t.max_inventory} | "
-            f"Status: {status} {eta}"
+            f"Status: {t.status} {eta}"
+            f"Current revenue: {t.total_revenue}"
+            f"Restocking cost: {t.get_restocking_cost()} {restocking_eta}"
         )
 
     report.append("\nZONE CONDITIONS:")
