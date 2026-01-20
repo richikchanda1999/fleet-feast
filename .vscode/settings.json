@@ -2,4 +2,5 @@
   "python.defaultInterpreterPath": "${workspaceFolder}/apps/api/.venv/bin/python",
   "python.analysis.extraPaths": ["${workspaceFolder}/apps/api/.venv/lib/python3.14/site-packages"],
   "python.analysis.typeCheckingMode": "standard",
+  "black-formatter.args": ["--line-length", "200"]
 }

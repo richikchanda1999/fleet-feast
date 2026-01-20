@@ -70,6 +70,7 @@ class StructuredLogger:
     def error(self, message: str, exc_info: bool = False, **kwargs: Any) -> None:
         if exc_info:
             import sys
+
             extra_data = kwargs if kwargs else None
             record = self.logger.makeRecord(
                 self.logger.name,

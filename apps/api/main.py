@@ -25,6 +25,7 @@ def handle_task_exception(task):
     if exc := task.exception():
         logger.error("Task failed", task_name=task.get_name(), error=str(exc))
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Application starting up")
@@ -33,7 +34,9 @@ async def lifespan(app: FastAPI):
     sim_task.add_done_callback(handle_task_exception)
     logger.info("Game loop task started")
 
-    agent_decision_task = asyncio.create_task(agent_decision_loop(), name="agent_decision_loop")
+    agent_decision_task = asyncio.create_task(
+        agent_decision_loop(), name="agent_decision_loop"
+    )
     agent_decision_task.add_done_callback(handle_task_exception)
     logger.info("Agent decision loop task started")
 
@@ -74,23 +77,22 @@ async def get_state():
         return state
     except Exception as e:
         logger.error("Failed to get state", exc_info=True, error=str(e))
-        raise HTTPException(
-            status_code=503, detail=f"Unable to get state: {str(e)}"
-        )
-    
-@app.get("/events")                                                                                                                                                
-async def sse_events():                                                                                                                                            
-    async def event_stream():                                                                                                                                      
-        client = await get_redis()                                                                                                                                 
-        pubsub = client.pubsub()                                                                                                                                   
-        await pubsub.subscribe("game:tick")                                                                                                                        
-                                                                                                                                                                    
-        async for message in pubsub.listen():                                                                                                                      
-            if message["type"] == "message":                                                                                                                       
-                state = await client.get(config.game_state_key)                                                                                                    
-                yield state                                                                                                                         
-                                                                                                                                                                    
-    return StreamingResponse(event_stream(), media_type="text/event-stream") 
+        raise HTTPException(status_code=503, detail=f"Unable to get state: {str(e)}")
+
+
+@app.get("/events")
+async def sse_events():
+    async def event_stream():
+        client = await get_redis()
+        pubsub = client.pubsub()
+        await pubsub.subscribe("game:tick")
+
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                state = await client.get(config.game_state_key)
+                yield state
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/health")

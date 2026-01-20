@@ -27,6 +27,7 @@ async def close_redis():
         await _client.close()
         _client = None
 
+
 async def enqueue(queue_name: str, message: Any) -> int:
     """Add a message to the queue. Returns queue length."""
     client = await get_redis()
@@ -48,7 +49,6 @@ async def dequeue(queue_name: str) -> Optional[Any]:
     if isinstance(result, Awaitable):
         result = await result
     return json.loads(result) if isinstance(result, str) else None
-        
 
 
 async def peek(queue_name: str) -> Optional[Any]:
@@ -56,7 +56,7 @@ async def peek(queue_name: str) -> Optional[Any]:
     client = await get_redis()
     result = client.lindex(queue_name, -1)
     if isinstance(result, Awaitable):
-            result = await result
+        result = await result
     return json.loads(result) if result else None
 
 

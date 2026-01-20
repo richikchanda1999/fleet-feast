@@ -3,6 +3,7 @@ from redis_client import enqueue
 from config import config
 from models import State
 
+
 class RestockInventorySchema(BaseModel):
     truck_id: str = Field(..., description="The ID of the truck that needs supplies")
     reasoning: str = Field(

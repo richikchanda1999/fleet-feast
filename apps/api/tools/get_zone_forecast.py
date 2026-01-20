@@ -5,7 +5,9 @@ from statistics import mean
 
 class GetZoneForecastSchema(BaseModel):
     zone_id: str = Field(..., description="The zone to analyze")
-    hours_ahead: int = Field(1, description="How many hours into the future to look (1-3)")
+    hours_ahead: int = Field(
+        1, description="How many hours into the future to look (1-3)"
+    )
 
 
 async def get_zone_forecast(state: State, zone_id: str, hours_ahead: int):

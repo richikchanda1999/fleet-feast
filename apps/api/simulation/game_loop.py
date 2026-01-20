@@ -36,7 +36,7 @@ def process_action(state: State, action: str, action_time: int, payload: dict):
 
         travel_time = state.get_travel_time(truck.current_zone, args.destination_zone)
         truck.dispatch(args.destination_zone, state.current_time + travel_time)
-        
+
         logger.info(
             "Truck dispatched",
             truck_id=truck.id,
@@ -88,7 +88,9 @@ async def game_loop():
 
             # Update Game Time
             state.current_time = state.current_time + 1
-            if state.current_time == 24 * 60:  # 1 second in real world is 1 minute in the simulation
+            if (
+                state.current_time == 24 * 60
+            ):  # 1 second in real world is 1 minute in the simulation
                 total_revenue = sum(t.total_revenue for t in state.trucks)
                 logger.info(
                     "Day ended - resetting game state",
@@ -124,7 +126,11 @@ async def game_loop():
                 zone.update_demand(state.current_time)
 
             for truck in state.trucks:
-                if truck.status == TruckStatus.RESTOCKING and truck.restocking_finish_time and state.current_time >= truck.restocking_finish_time:
+                if (
+                    truck.status == TruckStatus.RESTOCKING
+                    and truck.restocking_finish_time
+                    and state.current_time >= truck.restocking_finish_time
+                ):
                     units_restocked, cost = truck.restock()
                     if units_restocked > 0:
                         logger.info(
@@ -145,12 +151,19 @@ async def game_loop():
 
                 # Deplete Inventory (if status == 'serving')
                 elif truck.status == TruckStatus.SERVING:
-                    zone = next((z for z in state.zones if z.id == truck.current_zone), None)
+                    zone = next(
+                        (z for z in state.zones if z.id == truck.current_zone), None
+                    )
                     if zone:
-                        truck.process_sales(zone.demand[state.current_time], zone.base_demand)
+                        truck.process_sales(
+                            zone.demand[state.current_time], zone.base_demand
+                        )
 
                 # Check for 'Arrivals'
-                elif truck.status == TruckStatus.MOVING and state.current_time >= truck.arrival_time:
+                elif (
+                    truck.status == TruckStatus.MOVING
+                    and state.current_time >= truck.arrival_time
+                ):
                     previous_zone = truck.current_zone
                     truck.status = TruckStatus.SERVING
                     if truck.destination_zone is not None:

@@ -3,9 +3,11 @@ from redis_client import enqueue
 from config import config
 from models import State
 
+
 class HoldPositionSchema(BaseModel):
     truck_id: str = Field(
-        ..., description="The ID of the truck to hold position (e.g., 'truck-1', 'truck-2')"
+        ...,
+        description="The ID of the truck to hold position (e.g., 'truck-1', 'truck-2')",
     )
     reasoning: str = Field(
         ...,

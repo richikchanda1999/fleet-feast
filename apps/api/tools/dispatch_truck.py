@@ -3,6 +3,7 @@ from redis_client import enqueue
 from config import config
 from models import State
 
+
 class DispatchTruckSchema(BaseModel):
     truck_id: str = Field(
         ..., description="The ID of the truck to move (e.g., 'truck-1', 'truck-2')"
@@ -16,7 +17,9 @@ class DispatchTruckSchema(BaseModel):
     )
 
 
-async def dispatch_truck(state: State, truck_id: str, destination_zone: str, reasoning: str):
+async def dispatch_truck(
+    state: State, truck_id: str, destination_zone: str, reasoning: str
+):
     return await enqueue(
         config.pending_actions_queue,
         {

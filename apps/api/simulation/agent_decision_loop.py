@@ -36,8 +36,16 @@ def generate_user_prompt(state: State) -> Message:
     report.append("FLEET STATUS:")
     for t in state.trucks:
         # Determine status based on arrival time
-        eta = f"(ETA: {format_time(t.arrival_time)})" if t.status == TruckStatus.MOVING else ""
-        restocking_eta = f"(ETA: {format_time(t.restocking_finish_time)})" if TruckStatus.RESTOCKING and t.restocking_finish_time else ""
+        eta = (
+            f"(ETA: {format_time(t.arrival_time)})"
+            if t.status == TruckStatus.MOVING
+            else ""
+        )
+        restocking_eta = (
+            f"(ETA: {format_time(t.restocking_finish_time)})"
+            if TruckStatus.RESTOCKING and t.restocking_finish_time
+            else ""
+        )
 
         report.append(
             f"- {t.id} ({t.speed_multiplier}x speed): "
@@ -195,7 +203,9 @@ async def agent_decision_loop():
                                 function=tc.function.name,
                                 arguments=tc.function.arguments,
                             )
-                            result = await available_functions[tc.function.name](state=state, **tc.function.arguments)
+                            result = await available_functions[tc.function.name](
+                                state=state, **tc.function.arguments
+                            )
 
                             logger.info(
                                 "Tool call result",
@@ -219,7 +229,11 @@ async def agent_decision_loop():
                     logger.info(
                         "Agent decision cycle completed",
                         tool_calls_made=tool_call_count,
-                        final_response=response.message.content[:200] if response.message.content else None,
+                        final_response=(
+                            response.message.content[:200]
+                            if response.message.content
+                            else None
+                        ),
                     )
                     break
 
