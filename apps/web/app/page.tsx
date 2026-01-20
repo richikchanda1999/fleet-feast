@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import Dashboard from "./components/Dashboard";
 import { useGameState } from "./hooks/useGameState";
+import { createFleetFeastCity, FLEET_FEAST_ZONES } from "./data/fleetFeastCity";
 
 // GameBoard includes Phaser which needs browser APIs - must load dynamically
 const GameBoard = dynamic(() => import("pogicity").then((m) => m.GameBoard), {
@@ -18,8 +19,9 @@ export default function Home() {
   return (
     <div className="flex h-screen w-screen">
       <div className="w-3/4 h-full">
-        {/* <GameBoard
-          initialGrid={initialGrid}
+        <GameBoard
+          initialGrid={createFleetFeastCity}
+          zones={FLEET_FEAST_ZONES}
           handleBuildingClick={(buildingId: string | null, originX: number, originY: number, screenX: number, screenY: number) => {
             if (buildingId) {
               console.log("Building clicked:", buildingId, originX, originY, screenX, screenY);
@@ -28,7 +30,7 @@ export default function Home() {
           handleCarClick={(carId: string) => {
             console.log("Car clicked:", carId);
           }}
-        /> */}
+        />
       </div>
       <div className="w-1/4 h-full p-4 overflow-y-auto">
         <Dashboard
