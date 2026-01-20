@@ -68,3 +68,32 @@ class Truck(BaseModel):
         
         return (units, cost)
     
+    def start_restocking(self, current_time: int):
+        self.status = TruckStatus.RESTOCKING
+        self.restocking_finish_time = current_time + 10
+
+    def complete_restocking(self):
+        self.status = TruckStatus.SERVING
+        self.restocking_finish_time = None
+    
+    def process_sales(self, demand: float, base_demand: float):
+        if self.inventory > 0:
+            depletion_rate = demand / base_demand
+            
+            self.sales_accummulator += depletion_rate
+
+            units_to_sell = int(self.sales_accummulator)
+            if units_to_sell >= 1:
+                units_to_sell = min(units_to_sell, self.inventory)
+                self.sales_accummulator -= units_to_sell
+                self.inventory -= units_to_sell
+
+                price_per_unit = 100 * depletion_rate
+                price_per_unit = max(50, min(200, price_per_unit))
+                self.total_revenue += price_per_unit * units_to_sell
+
+    def dispatch(self, destination_zone: str, arrival_time: int):
+        self.destination_zone = destination_zone
+        self.arrival_time = arrival_time
+        self.status = TruckStatus.MOVING
+

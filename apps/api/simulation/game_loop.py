@@ -1,6 +1,5 @@
 import asyncio
-from typing import Any
-from utils import from_seconds, get_demand
+from utils import from_seconds
 from redis_client import get_redis, queue_length, dequeue
 from config import config
 from models import State, TruckStatus
@@ -36,9 +35,8 @@ def process_action(state: State, action: str, action_time: int, payload: dict):
             return
 
         travel_time = state.get_travel_time(truck.current_zone, args.destination_zone)
-        truck.destination_zone = args.destination_zone
-        truck.arrival_time = state.current_time + travel_time
-        truck.status = TruckStatus.MOVING
+        truck.dispatch(args.destination_zone, state.current_time + travel_time)
+        
         logger.info(
             "Truck dispatched",
             truck_id=truck.id,
@@ -55,8 +53,7 @@ def process_action(state: State, action: str, action_time: int, payload: dict):
             logger.warning("Truck not found for restock", truck_id=args.truck_id)
             return
 
-        truck.status = TruckStatus.RESTOCKING
-        truck.restocking_finish_time = state.current_time + 10
+        truck.start_restocking(state.current_time)
         logger.info(
             "Truck restocking started",
             truck_id=truck.id,
@@ -91,9 +88,7 @@ async def game_loop():
 
             # Update Game Time
             state.current_time = state.current_time + 1
-            if (
-                state.current_time == 24 * 60
-            ):  # 1 second in real world is 1 minute in the simulation
+            if state.current_time == 24 * 60:  # 1 second in real world is 1 minute in the simulation
                 total_revenue = sum(t.total_revenue for t in state.trucks)
                 logger.info(
                     "Day ended - resetting game state",
@@ -126,24 +121,10 @@ async def game_loop():
 
             # Update Demand Curves (based on new time)
             for zone in state.zones:
-                demands = [
-                    get_demand(
-                        minute_of_the_day=state.current_time,
-                        peak_time=int((start + end) / 2),
-                        max_orders=zone.max_orders,
-                        base_demand=zone.base_demand,
-                    )
-                    for (start, end) in zone.peak_hours
-                ]
-                net_demand = sum(demands)
-                zone.demand[state.current_time] = net_demand
+                zone.update_demand(state.current_time)
 
             for truck in state.trucks:
-                if (
-                    truck.status == TruckStatus.RESTOCKING
-                    and truck.restocking_finish_time
-                    and state.current_time >= truck.restocking_finish_time
-                ):
+                if truck.status == TruckStatus.RESTOCKING and truck.restocking_finish_time and state.current_time >= truck.restocking_finish_time:
                     units_restocked, cost = truck.restock()
                     if units_restocked > 0:
                         logger.info(
@@ -160,36 +141,16 @@ async def game_loop():
                             current_revenue=truck.total_revenue,
                         )
 
-                    truck.status = TruckStatus.SERVING
-                    truck.restocking_finish_time = None
+                    truck.complete_restocking()
 
                 # Deplete Inventory (if status == 'serving')
                 elif truck.status == TruckStatus.SERVING:
-                    if truck.inventory > 0:
-                        zone = next(
-                            (z for z in state.zones if z.id == truck.current_zone), None
-                        )
-                        if zone:
-                            depletion_rate = (
-                                zone.demand[state.current_time] / zone.base_demand
-                            )
-                            truck.sales_accummulator += depletion_rate
-
-                            units_to_sell = int(truck.sales_accummulator)
-                            if units_to_sell >= 1:
-                                units_to_sell = min(units_to_sell, truck.inventory)
-                                truck.sales_accummulator -= units_to_sell
-                                truck.inventory -= units_to_sell
-
-                                price_per_unit = 100 * depletion_rate
-                                price_per_unit = max(50, min(200, price_per_unit))
-                                truck.total_revenue += price_per_unit * units_to_sell
+                    zone = next((z for z in state.zones if z.id == truck.current_zone), None)
+                    if zone:
+                        truck.process_sales(zone.demand[state.current_time], zone.base_demand)
 
                 # Check for 'Arrivals'
-                elif (
-                    truck.status == TruckStatus.MOVING
-                    and state.current_time >= truck.arrival_time
-                ):
+                elif truck.status == TruckStatus.MOVING and state.current_time >= truck.arrival_time:
                     previous_zone = truck.current_zone
                     truck.status = TruckStatus.SERVING
                     if truck.destination_zone is not None:

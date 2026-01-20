@@ -27,10 +27,7 @@ def format_time(minutes: int) -> str:
 
 def get_current_demand(zone: Zone, current_time: int) -> str:
     # Simple logic to tell LLM if it's currently hot
-    for start, end in zone.peak_hours:
-        if start <= current_time <= end:
-            return "HIGH (Peak Hour)"
-    return "LOW (Off-peak)"
+    return "HIGH (Peak Hour)" if zone.is_peak_hour(current_time) else "LOW (Off-peak)"
 
 
 def generate_user_prompt(state: State) -> Message:
@@ -198,9 +195,7 @@ async def agent_decision_loop():
                                 function=tc.function.name,
                                 arguments=tc.function.arguments,
                             )
-                            result = await available_functions[tc.function.name](
-                                state=state, **tc.function.arguments
-                            )
+                            result = await available_functions[tc.function.name](state=state, **tc.function.arguments)
 
                             logger.info(
                                 "Tool call result",
