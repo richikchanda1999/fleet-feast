@@ -36,9 +36,9 @@ class Zone(BaseModel):
         sigma = (end_adjusted - start) / 4
         gaussian_demand = self.max_orders * np.exp(-(distance**2) / (2 * sigma**2))
 
-        noise_std = 0.1 * gaussian_demand + (np.random.randint(int(self.max_orders * 0.05)))  # 10% of demand + a small baseline within 5% of maximum orders                                                                                       
-        noise = np.random.normal(0, noise_std)                                                                                                                             
-        return max(0, gaussian_demand + noise)
+        noise_amplitude = 0.05 * gaussian_demand  # 5% variation
+        smooth_noise = noise_amplitude * np.sin(minute_of_the_day * 0.05 + hash(self.id) % 100)
+        return max(0, gaussian_demand + smooth_noise)
 
     def get_demands(self, current_time: int):
         return [self._get_demand(current_time, start, end) for (start, end) in self.peak_hours]
