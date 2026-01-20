@@ -5,10 +5,25 @@ import {
   DemandTrend,
   GameStateOutput,
   VehicleStatus,
-} from "@/lib/api/types.gen";
+} from "../types/dashboard";
 
 interface DashboardProps {
-  gameState: GameStateOutput;
+  gameState: GameStateOutput | null;
+  isConnected: boolean;
+  error: Error | null;
+  onReconnect: () => void;
+}
+
+function ProgressBar({ value, max, colorClass }: { value: number; max: number; colorClass: string }) {
+  const percentage = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div className="flex-1 h-2.5 bg-neutral-600 border border-t-neutral-700 border-l-neutral-700 border-b-neutral-400 border-r-neutral-400">
+      <div
+        className={`h-full transition-all duration-300 ${colorClass}`}
+        style={{ width: `${percentage}%` }}
+      />
+    </div>
+  );
 }
 
 function DemandBar({ demand, trend }: { demand: number; trend: DemandTrend }) {
@@ -33,9 +48,9 @@ function DemandBar({ demand, trend }: { demand: number; trend: DemandTrend }) {
 function StatusBadge({ status }: { status: VehicleStatus }) {
   const colorClasses: Record<VehicleStatus, string> = {
     [VehicleStatus.IDLE]: "bg-gray-500 text-white",
-    [VehicleStatus.EN_ROUTE]: "bg-blue-500 text-white",
-    [VehicleStatus.DELIVERING]: "bg-green-600 text-white",
-    [VehicleStatus.RETURNING]: "bg-yellow-500 text-neutral-800",
+    [VehicleStatus.MOVING]: "bg-blue-500 text-white",
+    [VehicleStatus.SERVING]: "bg-green-600 text-white",
+    [VehicleStatus.RESTOCKING]: "bg-yellow-500 text-neutral-800",
   };
 
   return (
@@ -65,10 +80,19 @@ function DecisionIcon({ type }: { type: DecisionType }) {
   );
 }
 
-export default function Dashboard({ gameState }: DashboardProps) {
-  const zoneDemands = gameState.zoneDemands ?? [];
-  const trucks = gameState.trucks ?? [];
-  const decisions = gameState.decisions ?? [];
+function formatTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  return `${displayHours}:${mins.toString().padStart(2, "0")} ${period}`;
+}
+
+export default function Dashboard({ gameState, isConnected, error, onReconnect }: DashboardProps) {
+  const zoneDemands = gameState?.zoneDemands ?? [];
+  const trucks = gameState?.trucks ?? [];
+  const decisions = gameState?.decisions ?? [];
+  const currentTime = gameState?.currentTime ?? 0;
 
   return (
     <div className="h-full bg-slate-600 p-3 flex flex-col font-mono">
@@ -77,6 +101,36 @@ export default function Dashboard({ gameState }: DashboardProps) {
         <h1 className="text-white text-base font-bold drop-shadow-[2px_2px_0px_#000] tracking-widest uppercase m-0">
           Fleet Command
         </h1>
+        {gameState && (
+          <div className="text-neutral-300 text-xs mt-1">
+            {formatTime(currentTime)}
+          </div>
+        )}
+      </div>
+
+      {/* Connection Status */}
+      <div className={`mb-3 px-2 py-1.5 text-xs text-center border-2 ${
+        error
+          ? "bg-red-600 text-white border-red-400"
+          : isConnected
+          ? "bg-green-600 text-white border-green-400"
+          : "bg-yellow-500 text-neutral-800 border-yellow-400"
+      }`}>
+        {error ? (
+          <div className="flex items-center justify-center gap-2">
+            <span>Connection Error</span>
+            <button
+              onClick={onReconnect}
+              className="px-2 py-0.5 bg-white text-red-600 text-xs font-bold border border-white/50 hover:bg-red-100"
+            >
+              Retry
+            </button>
+          </div>
+        ) : isConnected ? (
+          "Connected"
+        ) : (
+          "Connecting..."
+        )}
       </div>
 
       {/* Zone Demand Section */}
@@ -87,9 +141,18 @@ export default function Dashboard({ gameState }: DashboardProps) {
         <div className="p-2 font-mono text-[11px]">
           {zoneDemands.length > 0 ? (
             zoneDemands.map((zone) => (
-              <div key={zone.id} className="mb-2">
-                <div className="text-neutral-700 mb-0.5">{zone.name}</div>
+              <div key={zone.id} className="mb-3 pb-2 border-b border-neutral-500 last:border-b-0 last:mb-0 last:pb-0">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-neutral-700 font-bold">{zone.name}</span>
+                  <span className="text-neutral-600 text-[9px]">
+                    {zone.demandRaw}/{zone.maxOrders} orders
+                  </span>
+                </div>
                 <DemandBar demand={zone.demand} trend={zone.trend} />
+                <div className="flex justify-between mt-1 text-[9px] text-neutral-600">
+                  <span>Parking: {zone.parkingSpots}</span>
+                  <span>Peak: {zone.peakHours.length > 0 ? zone.peakHours.join(", ") : "None"}</span>
+                </div>
               </div>
             ))
           ) : (
@@ -109,17 +172,45 @@ export default function Dashboard({ gameState }: DashboardProps) {
               {trucks.map((vehicle) => (
                 <div
                   key={vehicle.id}
-                  className="flex items-center gap-2 py-1.5 border-b border-neutral-500"
+                  className="py-2 border-b border-neutral-500 last:border-b-0"
                 >
-                  <span className="flex-1 text-neutral-700 font-bold">{vehicle.name}</span>
-                  <StatusBadge status={vehicle.status} />
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-neutral-700 font-bold">{vehicle.name}</span>
+                    <StatusBadge status={vehicle.status} />
+                  </div>
+                  <div className="text-[9px] text-neutral-600 mb-1">
+                    <span>Zone: {vehicle.currentZone}</span>
+                    {vehicle.destinationZone && (
+                      <span className="ml-2">→ {vehicle.destinationZone}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] text-neutral-600 w-12">Inventory:</span>
+                    <ProgressBar
+                      value={vehicle.inventory}
+                      max={vehicle.maxInventory}
+                      colorClass={vehicle.inventory < vehicle.maxInventory * 0.3 ? "bg-red-500" : "bg-blue-500"}
+                    />
+                    <span className="text-[9px] text-neutral-600 w-10 text-right">
+                      {vehicle.inventory}/{vehicle.maxInventory}
+                    </span>
+                  </div>
+                  <div className="text-[9px] text-neutral-600">
+                    Revenue: <span className="text-green-700 font-bold">${vehicle.totalRevenue.toFixed(2)}</span>
+                  </div>
                 </div>
               ))}
               <div className="mt-2 px-2 py-1.5 bg-neutral-500 border border-t-neutral-400 border-l-neutral-400 border-b-neutral-300 border-r-neutral-300">
-                <div className="flex justify-between text-neutral-700">
+                <div className="flex justify-between text-neutral-700 text-[10px]">
                   <span>Active:</span>
                   <span className="font-bold">
                     {trucks.filter((v) => v.status !== VehicleStatus.IDLE).length}/{trucks.length}
+                  </span>
+                </div>
+                <div className="flex justify-between text-neutral-700 text-[10px] mt-1">
+                  <span>Total Revenue:</span>
+                  <span className="font-bold text-green-700">
+                    ${trucks.reduce((sum, t) => sum + t.totalRevenue, 0).toFixed(2)}
                   </span>
                 </div>
               </div>
