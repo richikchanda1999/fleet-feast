@@ -30,45 +30,67 @@ def get_current_demand(zone: Zone, current_time: int) -> str:
     return "HIGH (Peak Hour)" if zone.is_peak_hour(current_time) else "LOW (Off-peak)"
 
 
+def get_inventory_status(truck) -> str:
+    """Return inventory status with clear warning labels."""
+    percentage = (truck.inventory / truck.max_inventory) * 100
+    if percentage >= 100:
+        return "FULL (DO NOT RESTOCK)"
+    elif percentage >= 70:
+        return "Good"
+    elif percentage >= 30:
+        return "Moderate"
+    else:
+        return "LOW (Consider restocking)"
+
+
 def generate_user_prompt(state: State) -> Message:
-    report = [f"--- CURRENT TIME: {format_time(state.current_time)} ---", ""]
+    report = [f"CURRENT TIME: {format_time(state.current_time)}", ""]
 
-    report.append("FLEET STATUS:")
-    for t in state.trucks:
-        # Determine status based on arrival time
-        eta = (
-            f"(ETA: {format_time(t.arrival_time)})"
-            if t.status == TruckStatus.MOVING
-            else ""
-        )
-        restocking_eta = (
-            f"(ETA: {format_time(t.restocking_finish_time)})"
-            if TruckStatus.RESTOCKING and t.restocking_finish_time
-            else ""
-        )
-
-        report.append(
-            f"- {t.id} ({t.speed_multiplier}x speed): "
-            f"Loc: {t.current_zone} | "
-            f"Inv: {t.inventory}/{t.max_inventory} | "
-            f"Status: {t.status} {eta}"
-            f"Current revenue: {t.total_revenue}"
-            f"Restocking cost: {t.get_restocking_cost()} {restocking_eta}"
-        )
-
-    report.append("\nZONE CONDITIONS:")
+    # Zone conditions first - so LLM sees demand before making decisions
+    report.append("ZONE CONDITIONS (Check demand before moving trucks!):")
+    zone_demands = {}
     for z in state.zones:
         demand = get_current_demand(z, state.current_time)
-        report.append(f"- {z.id}: Demand is {demand}. Base: {z.base_demand}")
+        zone_demands[z.id] = demand
+        report.append(f"  - {z.id}: {demand}")
 
-    report.append("\nTRAVEL TIMES (Base Minutes from current positions):")
-    # Only show relevant connections to save tokens
+    report.append("")
+    report.append("FLEET STATUS:")
     for t in state.trucks:
-        current_z = next(z for z in state.zones if z.id == t.current_zone)
-        connections = ", ".join([f"{k}={v}m" for k, v in current_z.costs.items()])
-        report.append(f"From {t.current_zone} ({t.id}): [{connections}]")
+        inv_status = get_inventory_status(t)
+        inv_pct = int((t.inventory / t.max_inventory) * 100)
+        current_zone_demand = zone_demands.get(t.current_zone, "Unknown")
 
-    report.append("\nFor each truck, what tools should be called? Return JSON only.")
+        # Build status line
+        status_parts = [f"  - {t.id}:"]
+        status_parts.append(f"Zone={t.current_zone} ({current_zone_demand})")
+        status_parts.append(f"Inventory={t.inventory}/{t.max_inventory} ({inv_pct}%) [{inv_status}]")
+        status_parts.append(f"Status={t.status}")
+
+        if t.status == TruckStatus.MOVING:
+            status_parts.append(f"ETA={format_time(t.arrival_time)}")
+        elif t.status == TruckStatus.RESTOCKING and t.restocking_finish_time:
+            status_parts.append(f"Restock ETA={format_time(t.restocking_finish_time)}")
+
+        status_parts.append(f"Revenue=${t.total_revenue:.2f}")
+
+        # Only show restocking cost if inventory is not full
+        if t.inventory < t.max_inventory:
+            status_parts.append(f"Restock cost=${t.get_restocking_cost():.2f}")
+
+        report.append(" | ".join(status_parts))
+
+    report.append("")
+    report.append("TRAVEL TIMES (minutes) - Remember: travel time = lost serving time:")
+    for t in state.trucks:
+        if t.status in [TruckStatus.IDLE, TruckStatus.SERVING]:
+            current_z = next(z for z in state.zones if z.id == t.current_zone)
+            connections = ", ".join([f"{k}={v}m" for k, v in current_z.costs.items()])
+            report.append(f"  From {t.current_zone}: [{connections}]")
+
+    report.append("")
+    report.append("DECISION REQUIRED: For each IDLE or SERVING truck, decide: hold_position, dispatch_truck, or restock_inventory.")
+    report.append("Remember: Do NOT restock full inventory trucks. Do NOT move unless destination has higher demand.")
     return Message(role="user", content="\n".join(report))
 
 
@@ -79,20 +101,34 @@ def get_system_prompt() -> Message:
 You are the AI Fleet Manager for "Fleet Feast," a food truck logistics simulation.
 Your Goal: Maximize revenue by positioning trucks in high-demand zones and preventing inventory stockouts.
 
-RULES:
-1. Truck Speed: "Heavy" trucks (speed 0.5) take 2x longer to travel. "Fast" trucks (speed 1.5) take 0.6x time.
-2. Inventory: If inventory is < 30%, you MUST consider restocking or holding position to conserve.
-3. Travel Cost: Moving costs time (opportunity cost). Only move if the destination demand outweighs the travel downtime.
-4. Output Format: You must strictly output valid JSON. No markdown, no conversational filler.
+CRITICAL RULES:
+1. NEVER restock a truck that has full inventory (100%). Restocking a full truck wastes time and provides zero benefit.
+2. NEVER move a truck unless the destination zone has HIGHER demand than the current zone. Moving wastes time when the truck could be serving customers.
+3. If a truck is in a HIGH demand zone with sufficient inventory, use hold_position. Staying put and serving is better than moving.
+4. Only dispatch a truck to a new zone if:
+   - The destination is currently in HIGH demand (Peak Hour), AND
+   - The current zone is in LOW demand (Off-peak)
+5. If inventory is < 30%, consider restocking ONLY if current zone demand is LOW.
 
-AVAILABLE ZONES:
+TRUCK MECHANICS:
+- Speed multiplier affects travel time: 0.5x = 2x slower, 1.5x = 1.5x faster
+- Trucks cannot serve while moving or restocking
+- Every minute spent traveling is lost revenue opportunity
+
+ZONE PEAK HOURS:
 - Downtown (Lunch peak)
 - University (Late night/Afternoon peak)
 - Park (Afternoon peak)
 - Residential (Dinner peak)
 - Stadium (Event only)
 
-Analyze the Current State provided by the user, use tools and output ONE decision in JSON format. If using multiple tools, do them sequentially.
+DECISION PRIORITY:
+1. If inventory is full AND current zone is HIGH demand → hold_position
+2. If inventory is low AND current zone is LOW demand → restock_inventory
+3. If current zone is LOW demand AND another zone is HIGH demand → dispatch_truck
+4. Otherwise → hold_position (do not make unnecessary moves)
+
+Output ONE decision using the available tools. Prefer hold_position when uncertain.
 """,
     )
 
@@ -103,7 +139,7 @@ def get_tool_definitions():
             "type": "function",
             "function": {
                 "name": "dispatch_truck",
-                "description": "Move a truck to a new zone. Costs time and fuel.",
+                "description": "Move a truck to a new zone. ONLY use when destination zone has HIGH demand and current zone has LOW demand. Moving wastes time that could be spent serving.",
                 "parameters": DispatchTruckSchema.model_json_schema(),
             },
         },
@@ -111,7 +147,7 @@ def get_tool_definitions():
             "type": "function",
             "function": {
                 "name": "restock_inventory",
-                "description": "Send a truck to restock supplies. Truck becomes unavailable for a duration.",
+                "description": "Send a truck to restock supplies. NEVER use on trucks with full inventory. Only use when inventory is low AND current zone demand is low.",
                 "parameters": RestockInventorySchema.model_json_schema(),
             },
         },
@@ -119,7 +155,7 @@ def get_tool_definitions():
             "type": "function",
             "function": {
                 "name": "get_zone_forecast",
-                "description": "Check future demand multipliers for a specific zone.",
+                "description": "Check future demand multipliers for a specific zone. Use to plan ahead.",
                 "parameters": GetZoneForecastSchema.model_json_schema(),
             },
         },
@@ -127,7 +163,7 @@ def get_tool_definitions():
             "type": "function",
             "function": {
                 "name": "hold_position",
-                "description": "Do nothing this turn. Use this when the fleet is already optimized.",
+                "description": "Keep truck at current position. Use this when: (1) truck is in HIGH demand zone, (2) truck has full inventory, or (3) no better option exists. This is the safest default action.",
                 "parameters": HoldPositionSchema.model_json_schema(),
             },
         },
@@ -190,6 +226,7 @@ async def agent_decision_loop():
                     model="qwen3-coder:30b",
                     messages=messages,
                     tools=get_tool_definitions(),
+                    stream=False
                 )
 
                 messages.append(response.message)
