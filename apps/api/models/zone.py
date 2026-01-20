@@ -14,7 +14,7 @@ class Zone(BaseModel):
     type: ZoneType
     base_demand: float
 
-    costs: dict[str, float]
+    costs: dict[str, int]
     num_of_parking_spots: int
 
     demand: list[float] = [-1] * (24 * 60)

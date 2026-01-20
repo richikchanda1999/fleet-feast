@@ -20,6 +20,8 @@ class Truck(BaseModel):
     
     speed_multiplier: float
     arrival_time: int
+
+    restocking_finish_time: Optional[int] = None
     
     total_revenue: float = 0.0
 

@@ -1,9 +1,41 @@
 import asyncio
-
+from typing import Any
 from utils import from_seconds, get_demand
 from redis_client import get_redis, queue_length, dequeue
 from config import config
 from models import State, TruckStatus
+from tools import DispatchTruckSchema, RestockInventorySchema, HoldPositionSchema
+
+
+def process_action(state: State, action: str, action_time: int, payload: dict):
+    print(f"Processing action: {action} (Action time: {action_time}). Payload: {payload}")
+    if abs(state.current_time - action_time) > 5:
+        # The action is stale, no need to process it
+        return
+
+    if action == "dispatch_truck":
+        args = DispatchTruckSchema.model_validate(payload)
+        truck = next((t for t in state.trucks if t.id == args.truck_id), None)
+        if not truck:
+            return
+
+        truck.destination_zone = args.destination_zone
+        truck.arrival_time = state.current_time + state.get_travel_time(
+            truck.current_zone, truck.destination_zone
+        )
+        truck.status = TruckStatus.MOVING
+
+    elif action == "restock_inventory":
+        args = RestockInventorySchema.model_validate(payload)
+        truck = next((t for t in state.trucks if t.id == args.truck_id), None)
+        if not truck:
+            return
+
+        truck.status = TruckStatus.RESTOCKING
+        truck.restocking_finish_time = state.current_time + 10
+    elif action == "hold_position":
+        args = HoldPositionSchema.model_validate(payload)
+        # Do nothing
 
 
 async def game_loop():
@@ -25,27 +57,20 @@ async def game_loop():
             ):  # 1 second in real world is 1 minute in the simulation
                 state = State()
 
-            # TODO: Update game state with pending decisions from LLM
+            # Update game state with pending decisions from LLM
             pending_actions_length = await queue_length(config.pending_actions_queue)
             for i in range(0, pending_actions_length):
-                pending_action = await dequeue(config.pending_actions_queue)
-                if not pending_action:
+                payload = await dequeue(config.pending_actions_queue)
+                if not payload:
                     continue
-                
-                action = pending_action['action']
-                current_time = pending_action['current_time']
 
-                if not current_time:
+                action = payload["action"]
+                action_time = payload["current_time"]
+
+                if not action_time:
                     continue
-                
-                if action == "dispatch_truck":
-                    pass
-                elif action == "get_zone_forecast":
-                    pass
-                elif action == "restock_inventory":
-                    pass
-                elif action == "hold_position":
-                    pass
+
+                process_action(state, action, action_time, payload)
 
             # Update Demand Curves (based on new time)
             for zone in state.zones:
@@ -62,14 +87,23 @@ async def game_loop():
                 zone.demand[state.current_time] = net_demand
 
             for truck in state.trucks:
+                if (
+                    truck.status == TruckStatus.RESTOCKING
+                    and truck.restocking_finish_time
+                    and state.current_time >= truck.restocking_finish_time
+                ):
+                    truck.status = TruckStatus.SERVING
+                    truck.restocking_finish_time = None
+                    truck.inventory = truck.max_inventory
+
                 # Deplete Inventory (if status == 'serving')
-                if truck.status == TruckStatus.SERVING:
+                elif truck.status == TruckStatus.SERVING:
                     if truck.inventory > 0:
                         truck.inventory -= 1  # TODO: Make this variable
                         truck.total_revenue += 100  # TODO: Make this variable
 
                 # Check for 'Arrivals'
-                if (
+                elif (
                     truck.status == TruckStatus.MOVING
                     and state.current_time >= truck.arrival_time
                 ):

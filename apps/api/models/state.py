@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from .truck import Truck
 from .zone import Zone, ZoneType
 from utils import to_minutes
@@ -6,6 +6,7 @@ from utils import to_minutes
 
 class State(BaseModel):
     current_time: int = 0
+    shortest_paths: dict[str, dict[str, int]] = {}
 
     zones: list[Zone] = [
         Zone(
@@ -105,3 +106,29 @@ class State(BaseModel):
             arrival_time=to_minutes(hours=00, minutes=00),
         ),
     ]
+
+    @model_validator(mode="after")
+    def compute_paths(self) -> "State":
+        if not self.shortest_paths:
+            zone_ids = [z.id for z in self.zones]
+            dist = {z1: {z2: 10**9 for z2 in zone_ids} for z1 in zone_ids}
+
+            for z in zone_ids:
+                dist[z][z] = 0
+
+            for zone in self.zones:
+                for neighbor, cost in zone.costs.items():
+                    dist[zone.id][neighbor] = cost
+
+            for k in zone_ids:
+                for i in zone_ids:
+                    for j in zone_ids:
+                        if dist[i][k] + dist[k][j] < dist[i][j]:
+                            dist[i][j] = dist[i][k] + dist[k][j]
+
+            self.shortest_paths = dist
+        return self
+
+    def get_travel_time(self, from_zone: str, to_zone: str) -> int:
+        """Get shortest travel time between two zones."""
+        return self.shortest_paths[from_zone][to_zone]
