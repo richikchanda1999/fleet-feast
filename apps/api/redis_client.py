@@ -4,8 +4,6 @@ import redis.asyncio as redis
 
 from config import config
 
-print(config.redis_host, config.redis_password, config.redis_port)
-
 _client: Optional[redis.Redis] = None
 
 

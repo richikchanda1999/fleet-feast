@@ -89,8 +89,10 @@ async def sse_events():
 
         async for message in pubsub.listen():
             if message["type"] == "message":
-                state = await client.get(config.game_state_key)
-                yield state
+                state = State.model_validate_json(await client.get(config.game_state_key))
+                for zone in state.zones:
+                    zone.demand = zone.demand[max(state.current_time - 4, 0): state.current_time + 1]
+                yield state.model_dump_json()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
