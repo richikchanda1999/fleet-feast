@@ -203,6 +203,7 @@ async def game_loop():
                     )
 
             await client.set(config.game_state_key, state.model_dump_json())
+            await client.publish("game:tick", str(state.current_time))
         except Exception as e:
             logger.error("Error in game loop", exc_info=True, error=str(e))
         finally:

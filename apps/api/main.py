@@ -3,6 +3,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Awaitable
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from config import config
 from models import State
@@ -76,6 +77,20 @@ async def get_state():
         raise HTTPException(
             status_code=503, detail=f"Unable to get state: {str(e)}"
         )
+    
+@app.get("/events")                                                                                                                                                
+async def sse_events():                                                                                                                                            
+    async def event_stream():                                                                                                                                      
+        client = await get_redis()                                                                                                                                 
+        pubsub = client.pubsub()                                                                                                                                   
+        await pubsub.subscribe("game:tick")                                                                                                                        
+                                                                                                                                                                    
+        async for message in pubsub.listen():                                                                                                                      
+            if message["type"] == "message":                                                                                                                       
+                state = await client.get(config.game_state_key)                                                                                                    
+                yield state                                                                                                                         
+                                                                                                                                                                    
+    return StreamingResponse(event_stream(), media_type="text/event-stream") 
 
 
 @app.get("/health")
