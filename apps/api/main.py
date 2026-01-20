@@ -92,7 +92,7 @@ async def sse_events():
                 state = State.model_validate_json(await client.get(config.game_state_key))
                 for zone in state.zones:
                     zone.demand = zone.demand[max(state.current_time - 4, 0): state.current_time + 1]
-                yield state.model_dump_json()
+                yield f"data: {state.model_dump_json()}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
