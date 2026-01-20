@@ -8,30 +8,42 @@ from config import config
 from models import State
 from redis_client import get_redis, close_redis
 from simulation import game_loop, agent_decision_loop
+from logger import get_logger
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-def handle_task_exception(task):                                                                                                                                   
-      if task.cancelled():                                                                                                                                           
-          return                                                                                                                                                     
-      if exc := task.exception():                                                                                                                                    
-          print(f"Task failed: {exc}")
+logger = get_logger("main")
+
+
+def handle_task_exception(task):
+    if task.cancelled():
+        logger.warning("Task cancelled", task_name=task.get_name())
+        return
+    if exc := task.exception():
+        logger.error("Task failed", task_name=task.get_name(), error=str(exc))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    sim_task = asyncio.create_task(game_loop())
-    sim_task.add_done_callback(handle_task_exception)
+    logger.info("Application starting up")
 
-    agent_decision_task = asyncio.create_task(agent_decision_loop())
+    sim_task = asyncio.create_task(game_loop(), name="game_loop")
+    sim_task.add_done_callback(handle_task_exception)
+    logger.info("Game loop task started")
+
+    agent_decision_task = asyncio.create_task(agent_decision_loop(), name="agent_decision_loop")
     agent_decision_task.add_done_callback(handle_task_exception)
+    logger.info("Agent decision loop task started")
 
     yield
+
+    logger.info("Application shutting down")
     sim_task.cancel()
     agent_decision_task.cancel()
 
     await close_redis()
+    logger.info("Application shutdown complete")
 
 
 app = FastAPI(
@@ -56,8 +68,11 @@ async def get_state():
     """Initialize the game by returning current state."""
     try:
         client = await get_redis()
-        return State.model_validate_json(await client.get(config.game_state_key))
+        state = State.model_validate_json(await client.get(config.game_state_key))
+        logger.debug("State retrieved", current_time=state.current_time)
+        return state
     except Exception as e:
+        logger.error("Failed to get state", exc_info=True, error=str(e))
         raise HTTPException(
             status_code=503, detail=f"Unable to get state: {str(e)}"
         )
@@ -72,11 +87,14 @@ async def health():
         if isinstance(ping_response, Awaitable):
             ping_response = await ping_response
 
+        status = "healthy" if ping_response else "unhealthy"
+        logger.debug("Health check", status=status)
         return {
-            "status": "healthy" if ping_response else "unhealthy",
+            "status": status,
             "redis": "connected" if ping_response else "not_connected",
         }
     except Exception as e:
+        logger.error("Health check failed", exc_info=True, error=str(e))
         raise HTTPException(
             status_code=503, detail=f"Redis connection failed: {str(e)}"
         )

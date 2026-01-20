@@ -14,6 +14,9 @@ from tools import (
     RestockInventorySchema,
 )
 from ollama import chat, Message, ChatResponse
+from logger import get_logger
+
+logger = get_logger("agent_decision_loop")
 
 
 def format_time(minutes: int) -> str:
@@ -128,6 +131,7 @@ def get_tool_definitions():
 
 async def agent_decision_loop():
     client = await get_redis()
+    logger.info("Agent decision loop started")
 
     while True:
         # 1. Snapshot the current GAME_STATE
@@ -137,16 +141,32 @@ async def agent_decision_loop():
         try:
             pending_actions_length = await queue_length(config.pending_actions_queue)
             if pending_actions_length > 0:
+                logger.debug(
+                    "Skipping decision cycle - pending actions in queue",
+                    pending_actions_count=pending_actions_length,
+                )
                 continue
-            
+
             state = await client.get(config.game_state_key)
             if not state:
+                logger.debug("No game state found, skipping decision cycle")
                 continue
 
             state = State.model_validate_json(state)
-            print(
-                "In agent decision loop! Current time - ",
-                from_seconds(state.current_time * 60),
+            logger.info(
+                "Starting agent decision cycle",
+                game_time=from_seconds(state.current_time * 60),
+                current_time=state.current_time,
+                fleet_status=[
+                    {
+                        "id": t.id,
+                        "zone": t.current_zone,
+                        "status": t.status.value,
+                        "inventory": t.inventory,
+                        "revenue": round(t.total_revenue, 2),
+                    }
+                    for t in state.trucks
+                ],
             )
 
             messages: list[Message] = [get_system_prompt(), generate_user_prompt(state)]
@@ -158,7 +178,9 @@ async def agent_decision_loop():
                 "restock_inventory": restock_inventory,
             }
 
+            tool_call_count = 0
             while True:
+                logger.debug("Sending request to LLM", model="qwen3-coder:30b")
                 response: ChatResponse = chat(
                     model="qwen3-coder:30b",
                     messages=messages,
@@ -170,14 +192,21 @@ async def agent_decision_loop():
                 if response.message.tool_calls:
                     for tc in response.message.tool_calls:
                         if tc.function.name in available_functions:
-                            print(
-                                f"Calling {tc.function.name} with arguments {tc.function.arguments}"
+                            tool_call_count += 1
+                            logger.info(
+                                "LLM tool call",
+                                function=tc.function.name,
+                                arguments=tc.function.arguments,
                             )
                             result = await available_functions[tc.function.name](
                                 state=state, **tc.function.arguments
                             )
 
-                            print(f"Result: {result}")
+                            logger.info(
+                                "Tool call result",
+                                function=tc.function.name,
+                                result=str(result),
+                            )
                             # add the tool result to the messages
                             messages.append(
                                 Message(
@@ -186,11 +215,21 @@ async def agent_decision_loop():
                                     content=str(result),
                                 )
                             )
+                        else:
+                            logger.warning(
+                                "Unknown function called by LLM",
+                                function=tc.function.name,
+                            )
                 else:
+                    logger.info(
+                        "Agent decision cycle completed",
+                        tool_calls_made=tool_call_count,
+                        final_response=response.message.content[:200] if response.message.content else None,
+                    )
                     break
 
         except Exception as e:
-            print(f"Error in agent_decision_loop: {e}")
+            logger.error("Error in agent decision loop", exc_info=True, error=str(e))
 
         finally:
             await asyncio.sleep(30)  # Agent thinks every 30 seconds
