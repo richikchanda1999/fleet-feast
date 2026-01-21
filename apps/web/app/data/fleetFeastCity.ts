@@ -18,69 +18,19 @@
  * - stadium-1: 1
  */
 
-import {
-  TileType,
-  GridCell,
-  ZoneConfig,
-  Direction,
-  GRID_WIDTH,
-  GRID_HEIGHT,
-} from "pogicity/types";
-import {
-  ROAD_SEGMENT_SIZE,
-  getRoadConnections,
-  getSegmentType,
-  generateRoadPattern,
-} from "pogicity/roadUtils";
+import { TileType, GridCell, ZoneConfig, Direction, GRID_WIDTH, GRID_HEIGHT } from "pogicity/types";
+import { ROAD_SEGMENT_SIZE, getRoadConnections, getSegmentType, generateRoadPattern } from "pogicity/roadUtils";
 import { getBuilding, getBuildingFootprint } from "pogicity/buildings";
+import { PriorityQueue } from "@datastructures-js/priority-queue";
 
 // Zone colors for boundary overlays (RGB format for Phaser)
 const ZONE_COLORS = {
-  downtown: 0xff4444,    // Red - commercial/busy
-  university: 0x4488ff,  // Blue - academic
-  park: 0x44ff44,        // Green - nature
+  downtown: 0xff4444, // Red - commercial/busy
+  university: 0x4488ff, // Blue - academic
+  park: 0x44ff44, // Green - nature
   residential: 0xffaa44, // Orange - housing
-  stadium: 0xaa44ff,     // Purple - sports/events
+  stadium: 0xaa44ff, // Purple - sports/events
 };
-
-// Zone configurations matching backend zone IDs
-export const FLEET_FEAST_ZONES: ZoneConfig[] = [
-  {
-    id: "stadium-1",
-    name: "Stadium",
-    bounds: { x: 0, y: 0, width: 12, height: 16 },
-    tileType: TileType.Asphalt,
-    borderColor: ZONE_COLORS.stadium,
-  },
-  {
-    id: "park-1",
-    name: "Park",
-    bounds: { x: 16, y: 0, width: 20, height: 20 },
-    tileType: TileType.Grass,
-    borderColor: ZONE_COLORS.park,
-  },
-  {
-    id: "residential-1",
-    name: "Residential",
-    bounds: { x: 36, y: 0, width: 12, height: 24 },
-    tileType: TileType.Tile,
-    borderColor: ZONE_COLORS.residential,
-  },
-  {
-    id: "downtown-1",
-    name: "Downtown",
-    bounds: { x: 0, y: 24, width: 32, height: 24 },
-    tileType: TileType.Asphalt,
-    borderColor: ZONE_COLORS.downtown,
-  },
-  {
-    id: "university-1",
-    name: "University",
-    bounds: { x: 32, y: 28, width: 16, height: 20 },
-    tileType: TileType.Tile,
-    borderColor: ZONE_COLORS.university,
-  },
-];
 
 // Road segments connecting zones (origin coordinates, 4x4 segments)
 const ROAD_SEGMENTS: Array<{ x: number; y: number }> = [
@@ -137,44 +87,10 @@ const ROAD_SEGMENTS: Array<{ x: number; y: number }> = [
 // Building placements per zone
 interface BuildingPlacement {
   buildingId: string;
-  x: number;  // Origin X (top-left of building footprint)
-  y: number;  // Origin Y
+  x: number; // Origin X (top-left of building footprint)
+  y: number; // Origin Y
   orientation?: Direction;
 }
-
-// Parking spot locations (areas where food trucks can park)
-// These are marked as Tile type adjacent to roads
-interface ParkingSpot {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-const PARKING_SPOTS: Record<string, ParkingSpot[]> = {
-  "stadium-1": [
-    // 1 parking spot - next to road at x=12
-    { x: 8, y: 8, width: 4, height: 4 },
-  ],
-  "park-1": [
-    // 1 parking spot - near road intersection
-    { x: 17, y: 16, width: 3, height: 3 },
-  ],
-  "residential-1": [
-    // 2 parking spots
-    { x: 37, y: 4, width: 3, height: 3 },
-    { x: 37, y: 12, width: 3, height: 3 },
-  ],
-  "downtown-1": [
-    // 2 parking spots
-    { x: 4, y: 28, width: 4, height: 4 },
-    { x: 24, y: 40, width: 4, height: 4 },
-  ],
-  "university-1": [
-    // 1 parking spot
-    { x: 40, y: 32, width: 4, height: 4 },
-  ],
-};
 
 const BUILDING_PLACEMENTS: Record<string, BuildingPlacement[]> = {
   "stadium-1": [
@@ -226,13 +142,108 @@ const BUILDING_PLACEMENTS: Record<string, BuildingPlacement[]> = {
   ],
 };
 
+const directionVectors: Record<Direction, { dx: number; dy: number }> = {
+  [Direction.Up]: { dx: 0, dy: -1 },
+  [Direction.Down]: { dx: 0, dy: 1 },
+  [Direction.Left]: { dx: -1, dy: 0 },
+  [Direction.Right]: { dx: 1, dy: 0 },
+};
+
+// All directions as array
+const allDirections = [Direction.Up, Direction.Down, Direction.Left, Direction.Right];
+
+function getHeuristic(x: number, y: number, endX: number, endY: number): number {
+  return Math.abs(x - endX) + Math.abs(y - endY);
+}
+
+function isDrivable(grid: GridCell[][], x: number, y: number): boolean {
+  const gx = Math.floor(x);
+  const gy = Math.floor(y);
+  if (gx < 0 || gx >= GRID_WIDTH || gy < 0 || gy >= GRID_HEIGHT) return false;
+  return grid[gy][gx].type === TileType.Asphalt;
+}
+
+function getValidCarDirections(grid: GridCell[][], tileX: number, tileY: number): Direction[] {
+  const valid: Direction[] = [];
+  for (const dir of allDirections) {
+    const vec = directionVectors[dir];
+    if (isDrivable(grid, tileX + vec.dx, tileY + vec.dy)) {
+      valid.push(dir);
+    }
+  }
+  return valid;
+}
+
+function computePath(
+  grid: GridCell[][],
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+): Array<{ x: number; y: number }> | null {
+  const g: number[][] = Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_WIDTH).fill(0));
+  const visited: boolean[][] = Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_WIDTH).fill(false));
+  const set = new PriorityQueue<{ x: number; y: number }>((a, b) => {
+    const g1 = g[a.y][a.x] + getHeuristic(a.x, a.y, endX, endY);
+    const g2 = g[b.y][b.x] + getHeuristic(b.x, b.y, endX, endY);
+
+    return g1 - g2;
+  });
+  const came_from: { x: number; y: number }[][] = Array.from({ length: GRID_HEIGHT }, () =>
+    new Array(GRID_WIDTH).fill({ x: -1, y: -1 }),
+  );
+
+  console.log({ startX, startY, endX, endY, g, visited, came_from, x: g.length, y: g[0].length });
+  g[startY][startX] = 0;
+  visited[startY][startX] = true;
+  set.enqueue({ x: startX, y: startY });
+
+  while (!set.isEmpty()) {
+    const lowestNode = set.dequeue();
+    if (!lowestNode) break;
+
+    if (lowestNode.x == endX && lowestNode.y == endY) {
+      // Reached destination
+      const path: Array<{ x: number; y: number }> = [];
+
+      let current: { x: number; y: number } = { x: endX, y: endY };
+      while (true) {
+        if (current.x === startX && current.y === startY) {
+          break;
+        }
+        path.push({ x: current.x, y: current.y });
+        current = came_from[current.y][current.x];
+      }
+
+      return path.reverse();
+    }
+
+    visited[lowestNode.y][lowestNode.x] = true;
+
+    const directions = getValidCarDirections(grid, lowestNode.x, lowestNode.y);
+    for (const direction of directions) {
+      const cellX = lowestNode.x + directionVectors[direction].dx;
+      const cellY = lowestNode.y + directionVectors[direction].dy;
+
+      if (!visited[cellY][cellX]) {
+        const tentative_g = g[lowestNode.y][lowestNode.x] + 1;
+        const is_neighbour_in_set = set.contains(({ x, y }) => x === cellX && y === cellY);
+        if (!is_neighbour_in_set || tentative_g < g[cellY][cellX]) {
+          set.enqueue({ x: cellX, y: cellY });
+          g[cellY][cellX] = tentative_g;
+          came_from[cellY][cellX] = { x: lowestNode.x, y: lowestNode.y };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Places a building on the grid
  */
-function placeBuilding(
-  grid: GridCell[][],
-  placement: BuildingPlacement
-): void {
+function placeBuilding(grid: GridCell[][], placement: BuildingPlacement): void {
   const building = getBuilding(placement.buildingId);
   if (!building) {
     console.warn(`Building not found: ${placement.buildingId}`);
@@ -280,117 +291,147 @@ function placeBuilding(
   }
 }
 
-/**
- * Creates the Fleet Feast city grid with zones, roads, buildings, and parking spots.
- */
-export function createFleetFeastCity(): GridCell[][] {
-  // Initialize grid with grass
-  const grid: GridCell[][] = Array.from({ length: GRID_HEIGHT }, (_, y) =>
-    Array.from({ length: GRID_WIDTH }, (_, x) => ({
-      type: TileType.Grass,
-      x,
-      y,
-      isOrigin: true,
-    }))
-  );
+export class FleetFeastCity {
+  readonly grid: GridCell[][];
+  readonly paths: Record<string, Record<string, Array<{x: number, y: number}> | null>>
 
-  // Apply zone-specific ground tiles
-  for (const zone of FLEET_FEAST_ZONES) {
-    const { bounds, tileType } = zone;
-    for (let dy = 0; dy < bounds.height; dy++) {
-      for (let dx = 0; dx < bounds.width; dx++) {
-        const px = bounds.x + dx;
-        const py = bounds.y + dy;
-        if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-          grid[py][px].type = tileType;
-        }
-      }
-    }
-  }
+  readonly ZONE_CONFIGS: ZoneConfig[] = [
+    {
+      id: "stadium-1",
+      name: "Stadium",
+      bounds: { x: 0, y: 0, width: 12, height: 16 },
+      tileType: TileType.Asphalt,
+      borderColor: ZONE_COLORS.stadium,
+      parking_zones: [{ x: 8, y: 8 }],
+    },
+    {
+      id: "park-1",
+      name: "Park",
+      bounds: { x: 16, y: 0, width: 20, height: 20 },
+      tileType: TileType.Grass,
+      borderColor: ZONE_COLORS.park,
+      parking_zones: [{ x: 17, y: 16 }],
+    },
+    {
+      id: "residential-1",
+      name: "Residential",
+      bounds: { x: 36, y: 0, width: 12, height: 24 },
+      tileType: TileType.Tile,
+      borderColor: ZONE_COLORS.residential,
+      parking_zones: [
+        { x: 37, y: 4 },
+        { x: 37, y: 12 },
+      ],
+    },
+    {
+      id: "downtown-1",
+      name: "Downtown",
+      bounds: { x: 0, y: 24, width: 32, height: 24 },
+      tileType: TileType.Asphalt,
+      borderColor: ZONE_COLORS.downtown,
+      parking_zones: [
+        { x: 4, y: 28 },
+        { x: 24, y: 40 },
+      ],
+    },
+    {
+      id: "university-1",
+      name: "University",
+      bounds: { x: 32, y: 28, width: 16, height: 20 },
+      tileType: TileType.Tile,
+      borderColor: ZONE_COLORS.university,
+      parking_zones: [{ x: 40, y: 32 }],
+    },
+  ];
 
-  // Apply parking spots (Tile type for food truck parking)
-  for (const zone of FLEET_FEAST_ZONES) {
-    const spots = PARKING_SPOTS[zone.id] || [];
-    for (const spot of spots) {
-      for (let dy = 0; dy < spot.height; dy++) {
-        for (let dx = 0; dx < spot.width; dx++) {
-          const px = spot.x + dx;
-          const py = spot.y + dy;
+  constructor() {
+    // Initialize grid with grass
+    this.grid = Array.from({ length: GRID_HEIGHT }, (_, y) =>
+      Array.from({ length: GRID_WIDTH }, (_, x) => ({
+        type: TileType.Grass,
+        x,
+        y,
+        isOrigin: true,
+      })),
+    );
+
+    this.paths = {}
+
+    // Apply zone-specific ground tiles
+    for (const zone of this.ZONE_CONFIGS) {
+      const { bounds, tileType } = zone;
+      for (let dy = 0; dy < bounds.height; dy++) {
+        for (let dx = 0; dx < bounds.width; dx++) {
+          const px = bounds.x + dx;
+          const py = bounds.y + dy;
           if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-            grid[py][px].type = TileType.Tile;
+            this.grid[py][px].type = tileType;
           }
         }
       }
     }
-  }
 
-  // Place road segments - first pass (mark as road)
-  for (const seg of ROAD_SEGMENTS) {
-    for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
-      for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
-        const px = seg.x + dx;
-        const py = seg.y + dy;
+    // Apply parking spots (Tile type for food truck parking)
+    for (const zone of this.ZONE_CONFIGS) {
+      const spots = zone.parking_zones || [];
+      for (const spot of spots) {
+        const px = spot.x;
+        const py = spot.y;
         if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-          grid[py][px].isOrigin = dx === 0 && dy === 0;
-          grid[py][px].originX = seg.x;
-          grid[py][px].originY = seg.y;
-          grid[py][px].type = TileType.Road;
+          this.grid[py][px].type = TileType.Tile;
+        }
+
+        this.paths[zone.id] = {}
+        // Compute path to all other parking spots in other zones and store that
+        for (const toZone of this.ZONE_CONFIGS) {
+          if (toZone.id === zone.id) continue;
+
+          for (const toParkingSpot of toZone.parking_zones) {
+            const path = computePath(this.grid, spot.x, spot.y, toParkingSpot.x, toParkingSpot.y);
+            // console.log(`Path from (${spot.x}, ${spot.y}) -> (${toParkingSpot.x}, ${toParkingSpot.y}): ${path}`)
+            this.paths[zone.id][toZone.id] = path;
+          }
         }
       }
     }
-  }
 
-  // Place road segments - second pass with proper patterns
-  for (const seg of ROAD_SEGMENTS) {
-    const connections = getRoadConnections(grid, seg.x, seg.y);
-    const segmentType = getSegmentType(connections);
-    const pattern = generateRoadPattern(segmentType);
+    // Place road segments - first pass (mark as road)
+    for (const seg of ROAD_SEGMENTS) {
+      for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
+        for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
+          const px = seg.x + dx;
+          const py = seg.y + dy;
+          if (px < GRID_WIDTH && py < GRID_HEIGHT) {
+            this.grid[py][px].isOrigin = dx === 0 && dy === 0;
+            this.grid[py][px].originX = seg.x;
+            this.grid[py][px].originY = seg.y;
+            this.grid[py][px].type = TileType.Road;
+          }
+        }
+      }
+    }
 
-    for (const tile of pattern) {
-      const px = seg.x + tile.dx;
-      const py = seg.y + tile.dy;
-      if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-        grid[py][px].type = tile.type;
+    // Place road segments - second pass with proper patterns
+    for (const seg of ROAD_SEGMENTS) {
+      const connections = getRoadConnections(this.grid, seg.x, seg.y);
+      const segmentType = getSegmentType(connections);
+      const pattern = generateRoadPattern(segmentType);
+
+      for (const tile of pattern) {
+        const px = seg.x + tile.dx;
+        const py = seg.y + tile.dy;
+        if (px < GRID_WIDTH && py < GRID_HEIGHT) {
+          this.grid[py][px].type = tile.type;
+        }
+      }
+    }
+
+    // Place buildings for each zone
+    for (const zone of this.ZONE_CONFIGS) {
+      const placements = BUILDING_PLACEMENTS[zone.id] || [];
+      for (const placement of placements) {
+        placeBuilding(this.grid, placement);
       }
     }
   }
-
-  // Place buildings for each zone
-  for (const zone of FLEET_FEAST_ZONES) {
-    const placements = BUILDING_PLACEMENTS[zone.id] || [];
-    for (const placement of placements) {
-      placeBuilding(grid, placement);
-    }
-  }
-
-  return grid;
-}
-
-/**
- * Get zone configuration by ID
- */
-export function getZoneById(zoneId: string): ZoneConfig | undefined {
-  return FLEET_FEAST_ZONES.find((z) => z.id === zoneId);
-}
-
-/**
- * Get the zone that contains a specific grid coordinate
- */
-export function getZoneAtPosition(x: number, y: number): ZoneConfig | undefined {
-  return FLEET_FEAST_ZONES.find((zone) => {
-    const { bounds } = zone;
-    return (
-      x >= bounds.x &&
-      x < bounds.x + bounds.width &&
-      y >= bounds.y &&
-      y < bounds.y + bounds.height
-    );
-  });
-}
-
-/**
- * Get parking spots for a zone
- */
-export function getParkingSpotsForZone(zoneId: string): ParkingSpot[] {
-  return PARKING_SPOTS[zoneId] || [];
 }

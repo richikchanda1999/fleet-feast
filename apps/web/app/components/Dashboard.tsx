@@ -1,27 +1,38 @@
 "use client";
 
-import {
-  DecisionType,
-  DemandTrend,
-  GameStateOutput,
-  VehicleStatus,
-} from "../types/dashboard";
+import { useGameStore } from "@/lib/game-store-provider";
+import { DemandTrend, DecisionType } from "../../lib/types";
+import { TruckStatus } from "@/lib/api";
+import { formatPeakHour } from "@/lib/utils";
 
 interface DashboardProps {
-  gameState: GameStateOutput | null;
   isConnected: boolean;
   error: Error | null;
-  onReconnect: () => void;
+}
+
+/**
+ * Calculate demand trend by comparing recent demand values
+ */
+export function calculateTrend(demandArray: number[]): DemandTrend {
+  if (demandArray.length < 2) return DemandTrend.STABLE;
+
+  const recent = demandArray[demandArray.length - 1];
+  const previous = demandArray[demandArray.length - 2];
+  const diff = recent - previous;
+
+  // Consider a change of more than 5% as a trend
+  const threshold = 0.05 * Math.max(recent, previous, 1);
+
+  if (diff > threshold) return DemandTrend.UP;
+  if (diff < -threshold) return DemandTrend.DOWN;
+  return DemandTrend.STABLE;
 }
 
 function ProgressBar({ value, max, colorClass }: { value: number; max: number; colorClass: string }) {
   const percentage = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
     <div className="flex-1 h-2.5 bg-neutral-600 border border-t-neutral-700 border-l-neutral-700 border-b-neutral-400 border-r-neutral-400">
-      <div
-        className={`h-full transition-all duration-300 ${colorClass}`}
-        style={{ width: `${percentage}%` }}
-      />
+      <div className={`h-full transition-all duration-300 ${colorClass}`} style={{ width: `${percentage}%` }} />
     </div>
   );
 }
@@ -29,15 +40,13 @@ function ProgressBar({ value, max, colorClass }: { value: number; max: number; c
 function DemandBar({ demand, trend }: { demand: number; trend: DemandTrend }) {
   const barColorClass = demand > 70 ? "bg-red-500" : demand > 40 ? "bg-yellow-500" : "bg-green-600";
   const trendIcon = trend === DemandTrend.UP ? "▲" : trend === DemandTrend.DOWN ? "▼" : "●";
-  const trendColorClass = trend === DemandTrend.UP ? "text-green-500" : trend === DemandTrend.DOWN ? "text-red-500" : "text-gray-500";
+  const trendColorClass =
+    trend === DemandTrend.UP ? "text-green-500" : trend === DemandTrend.DOWN ? "text-red-500" : "text-gray-500";
 
   return (
     <div className="flex items-center gap-1.5">
       <div className="flex-1 h-3 bg-neutral-600 border border-t-neutral-700 border-l-neutral-700 border-b-neutral-400 border-r-neutral-400">
-        <div
-          className={`h-full transition-all duration-300 ${barColorClass}`}
-          style={{ width: `${demand}%` }}
-        />
+        <div className={`h-full transition-all duration-300 ${barColorClass}`} style={{ width: `${demand}%` }} />
       </div>
       <span className={`text-[10px] ${trendColorClass}`}>{trendIcon}</span>
       <span className="w-7 text-right text-neutral-700 text-xs">{demand}%</span>
@@ -45,12 +54,12 @@ function DemandBar({ demand, trend }: { demand: number; trend: DemandTrend }) {
   );
 }
 
-function StatusBadge({ status }: { status: VehicleStatus }) {
-  const colorClasses: Record<VehicleStatus, string> = {
-    [VehicleStatus.IDLE]: "bg-gray-500 text-white",
-    [VehicleStatus.MOVING]: "bg-blue-500 text-white",
-    [VehicleStatus.SERVING]: "bg-green-600 text-white",
-    [VehicleStatus.RESTOCKING]: "bg-yellow-500 text-neutral-800",
+function StatusBadge({ status }: { status: TruckStatus }) {
+  const colorClasses: Record<TruckStatus, string> = {
+    [TruckStatus.IDLE]: "bg-gray-500 text-white",
+    [TruckStatus.MOVING]: "bg-blue-500 text-white",
+    [TruckStatus.SERVING]: "bg-green-600 text-white",
+    [TruckStatus.RESTOCKING]: "bg-yellow-500 text-neutral-800",
   };
 
   return (
@@ -88,11 +97,10 @@ function formatTime(minutes: number): string {
   return `${displayHours}:${mins.toString().padStart(2, "0")} ${period}`;
 }
 
-export default function Dashboard({ gameState, isConnected, error, onReconnect }: DashboardProps) {
-  const zoneDemands = gameState?.zoneDemands ?? [];
-  const trucks = gameState?.trucks ?? [];
-  const decisions = gameState?.decisions ?? [];
-  const currentTime = gameState?.currentTime ?? 0;
+export default function Dashboard({ isConnected, error }: DashboardProps) {
+  const decisions = []; // TODO: Get LLM decisions from the backend
+
+  const { currentTime, zones, trucks } = useGameStore((state) => state);
 
   return (
     <div className="h-full bg-slate-600 p-3 flex flex-col font-mono">
@@ -101,30 +109,28 @@ export default function Dashboard({ gameState, isConnected, error, onReconnect }
         <h1 className="text-white text-base font-bold drop-shadow-[2px_2px_0px_#000] tracking-widest uppercase m-0">
           Fleet Command
         </h1>
-        {gameState && (
-          <div className="text-neutral-300 text-xs mt-1">
-            {formatTime(currentTime)}
-          </div>
-        )}
+        <div className="text-neutral-300 text-xs mt-1">{formatTime(currentTime)}</div>
       </div>
 
       {/* Connection Status */}
-      <div className={`mb-3 px-2 py-1.5 text-xs text-center border-2 ${
-        error
-          ? "bg-red-600 text-white border-red-400"
-          : isConnected
-          ? "bg-green-600 text-white border-green-400"
-          : "bg-yellow-500 text-neutral-800 border-yellow-400"
-      }`}>
+      <div
+        className={`mb-3 px-2 py-1.5 text-xs text-center border-2 ${
+          error
+            ? "bg-red-600 text-white border-red-400"
+            : isConnected
+              ? "bg-green-600 text-white border-green-400"
+              : "bg-yellow-500 text-neutral-800 border-yellow-400"
+        }`}
+      >
         {error ? (
           <div className="flex items-center justify-center gap-2">
             <span>Connection Error</span>
-            <button
+            {/* <button
               onClick={onReconnect}
               className="px-2 py-0.5 bg-white text-red-600 text-xs font-bold border border-white/50 hover:bg-red-100"
             >
               Retry
-            </button>
+            </button> */}
           </div>
         ) : isConnected ? (
           "Connected"
@@ -139,22 +145,33 @@ export default function Dashboard({ gameState, isConnected, error, onReconnect }
           Zone Demand
         </div>
         <div className="p-2 font-mono text-[11px]">
-          {zoneDemands.length > 0 ? (
-            zoneDemands.map((zone) => (
-              <div key={zone.id} className="mb-3 pb-2 border-b border-neutral-500 last:border-b-0 last:mb-0 last:pb-0">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-neutral-700 font-bold">{zone.name}</span>
-                  <span className="text-neutral-600 text-[9px]">
-                    {zone.demandRaw}/{zone.maxOrders} orders
-                  </span>
+          {zones.length > 0 ? (
+            zones.map((zone) => {
+              const demandArray = zone.demand ?? [];
+              // Get the current demand value (last in the array)
+              const currentDemand = demandArray.length > 0 ? demandArray[demandArray.length - 1] : 0;
+              // Normalize to percentage (0-100), handle division by zero
+              const demandPercentage =
+                zone.max_orders > 0 ? Math.min(100, Math.round((currentDemand / zone.max_orders) * 100)) : 0;
+              return (
+                <div
+                  key={zone.id}
+                  className="mb-3 pb-2 border-b border-neutral-500 last:border-b-0 last:mb-0 last:pb-0"
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-neutral-700 font-bold">{zone.id}</span>
+                    <span className="text-neutral-600 text-[9px]">
+                      {demandPercentage}/{zone.max_orders} orders
+                    </span>
+                  </div>
+                  <DemandBar demand={demandPercentage} trend={calculateTrend(zone.demand ?? [])} />
+                  <div className="flex justify-between mt-1 text-[9px] text-neutral-600">
+                    <span>Parking: {zone.num_of_parking_spots}</span>
+                    <span>Peak: {zone.peak_hours.length > 0 ? zone.peak_hours.map(([start, end]) => formatPeakHour(start, end)).join(", ") : "None"}</span>
+                  </div>
                 </div>
-                <DemandBar demand={zone.demand} trend={zone.trend} />
-                <div className="flex justify-between mt-1 text-[9px] text-neutral-600">
-                  <span>Parking: {zone.parkingSpots}</span>
-                  <span>Peak: {zone.peakHours.length > 0 ? zone.peakHours.join(", ") : "None"}</span>
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="text-neutral-500 text-center py-2">No zone data</div>
           )}
@@ -169,34 +186,29 @@ export default function Dashboard({ gameState, isConnected, error, onReconnect }
         <div className="p-2 font-mono text-[11px]">
           {trucks.length > 0 ? (
             <>
-              {trucks.map((vehicle) => (
-                <div
-                  key={vehicle.id}
-                  className="py-2 border-b border-neutral-500 last:border-b-0"
-                >
+              {trucks.map((truck) => (
+                <div key={truck.id} className="py-2 border-b border-neutral-500 last:border-b-0">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-neutral-700 font-bold">{vehicle.name}</span>
-                    <StatusBadge status={vehicle.status} />
+                    <span className="text-neutral-700 font-bold">{truck.id}</span>
+                    {truck.status && <StatusBadge status={truck.status} />}
                   </div>
                   <div className="text-[9px] text-neutral-600 mb-1">
-                    <span>Zone: {vehicle.currentZone}</span>
-                    {vehicle.destinationZone && (
-                      <span className="ml-2">→ {vehicle.destinationZone}</span>
-                    )}
+                    <span>Zone: {truck.current_zone}</span>
+                    {truck.destination_zone && <span className="ml-2">→ {truck.destination_zone}</span>}
                   </div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[9px] text-neutral-600 w-12">Inventory:</span>
                     <ProgressBar
-                      value={vehicle.inventory}
-                      max={vehicle.maxInventory}
-                      colorClass={vehicle.inventory < vehicle.maxInventory * 0.3 ? "bg-red-500" : "bg-blue-500"}
+                      value={truck.inventory}
+                      max={truck.max_inventory}
+                      colorClass={truck.inventory < truck.max_inventory * 0.3 ? "bg-red-500" : "bg-blue-500"}
                     />
                     <span className="text-[9px] text-neutral-600 w-10 text-right">
-                      {vehicle.inventory}/{vehicle.maxInventory}
+                      {truck.inventory}/{truck.max_inventory}
                     </span>
                   </div>
                   <div className="text-[9px] text-neutral-600">
-                    Revenue: <span className="text-green-700 font-bold">${vehicle.totalRevenue.toFixed(2)}</span>
+                    Revenue: <span className="text-green-700 font-bold">${truck.total_revenue?.toFixed(2)}</span>
                   </div>
                 </div>
               ))}
@@ -204,13 +216,13 @@ export default function Dashboard({ gameState, isConnected, error, onReconnect }
                 <div className="flex justify-between text-neutral-700 text-[10px]">
                   <span>Active:</span>
                   <span className="font-bold">
-                    {trucks.filter((v) => v.status !== VehicleStatus.IDLE).length}/{trucks.length}
+                    {trucks.filter((v) => v.status !== TruckStatus.IDLE).length}/{trucks.length}
                   </span>
                 </div>
                 <div className="flex justify-between text-neutral-700 text-[10px] mt-1">
                   <span>Total Revenue:</span>
                   <span className="font-bold text-green-700">
-                    ${trucks.reduce((sum, t) => sum + t.totalRevenue, 0).toFixed(2)}
+                    ${trucks.reduce((sum, t) => sum + (t.total_revenue ?? 0), 0).toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -226,26 +238,21 @@ export default function Dashboard({ gameState, isConnected, error, onReconnect }
         <div className="bg-linear-to-b from-blue-600 to-blue-800 text-white px-2.5 py-1.5 font-mono text-[13px] font-bold drop-shadow-[1px_1px_0px_#000] border-b-2 border-blue-800 uppercase tracking-wide">
           Recent Decisions
         </div>
-        <div className="p-2 font-mono text-[11px] flex-1 overflow-y-auto">
+        {/* <div className="p-2 font-mono text-[11px] flex-1 overflow-y-auto">
           {decisions.length > 0 ? (
             decisions.map((decision) => (
-              <div
-                key={decision.id}
-                className="flex items-start gap-2 py-1.5 border-b border-neutral-500"
-              >
+              <div key={decision.id} className="flex items-start gap-2 py-1.5 border-b border-neutral-500">
                 <DecisionIcon type={decision.type} />
                 <div className="flex-1">
                   <div className="text-neutral-700 text-[10px]">{decision.description}</div>
-                  <div className="text-neutral-500 text-[9px]">
-                    {new Date(decision.timestamp).toLocaleTimeString()}
-                  </div>
+                  <div className="text-neutral-500 text-[9px]">{new Date(decision.timestamp).toLocaleTimeString()}</div>
                 </div>
               </div>
             ))
           ) : (
             <div className="text-neutral-500 text-center py-2">No decisions yet</div>
           )}
-        </div>
+        </div> */}
       </div>
     </div>
   );
