@@ -17,9 +17,14 @@ export function useGameState(): UseGameStateResult {
 
   const { handleState } = useGameStore((state) => state)
 
-  const eventSource = useRef<EventSource>(new EventSource(`${API_BASE_URL}/events`));
+  const eventSource = useRef<EventSource | null>(null);
 
   useEffect(() => {
+    if (eventSource.current !== null) {
+      return
+    }
+
+    eventSource.current = new EventSource(`${API_BASE_URL}/events`)
     eventSource.current.onopen = (ev) => {
       setIsConnected(true);
     };
@@ -31,7 +36,6 @@ export function useGameState(): UseGameStateResult {
     eventSource.current.onmessage = (ev: MessageEvent) => {
       if (ev.isTrusted) {
         const state: State = JSON.parse(ev.data) as State;
-        console.log({ state, data: typeof ev.data });
         handleState(state)
       }
     };
