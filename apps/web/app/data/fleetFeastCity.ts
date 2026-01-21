@@ -125,120 +125,21 @@ const BUILDING_PLACEMENTS: Record<string, BuildingPlacement[]> = {
     { buildingId: "popeyes", x: 6, y: 32, orientation: Direction.Down },
     { buildingId: "dunkin", x: 2, y: 38, orientation: Direction.Down },
     { buildingId: "martini-bar", x: 6, y: 38, orientation: Direction.Down },
-    { buildingId: "bookstore", x: 18, y: 30, orientation: Direction.Down },
-    { buildingId: "palo-alto-office-center", x: 24, y: 32, orientation: Direction.Down },
+    { buildingId: "bookstore", x: 24, y: 32, orientation: Direction.Down },
     { buildingId: "80s-apartment", x: 2, y: 44, orientation: Direction.Up },
     { buildingId: "medium-apartments", x: 18, y: 40, orientation: Direction.Down },
     { buildingId: "bus-shelter", x: 10, y: 28 },
   ],
   "university-1": [
     // University zone - academic buildings
-    { buildingId: "private-school", x: 36, y: 36, orientation: Direction.Left },
-    { buildingId: "internet-archive", x: 36, y: 42, orientation: Direction.Up },
-    { buildingId: "tree-2", x: 44, y: 30 },
-    { buildingId: "tree-3", x: 44, y: 38 },
+    { buildingId: "private-school", x: 45, y: 32, orientation: Direction.Left },
+    { buildingId: "internet-archive", x: 42, y: 42, orientation: Direction.Left },
+    { buildingId: "tree-2", x: 36, y: 30 },
+    { buildingId: "tree-3", x: 36, y: 46 },
     { buildingId: "modern-bench", x: 38, y: 34, orientation: Direction.Down },
     { buildingId: "flower-bush", x: 42, y: 34 },
   ],
 };
-
-const directionVectors: Record<Direction, { dx: number; dy: number }> = {
-  [Direction.Up]: { dx: 0, dy: -1 },
-  [Direction.Down]: { dx: 0, dy: 1 },
-  [Direction.Left]: { dx: -1, dy: 0 },
-  [Direction.Right]: { dx: 1, dy: 0 },
-};
-
-// All directions as array
-const allDirections = [Direction.Up, Direction.Down, Direction.Left, Direction.Right];
-
-function getHeuristic(x: number, y: number, endX: number, endY: number): number {
-  return Math.abs(x - endX) + Math.abs(y - endY);
-}
-
-function isDrivable(grid: GridCell[][], x: number, y: number): boolean {
-  const gx = Math.floor(x);
-  const gy = Math.floor(y);
-  if (gx < 0 || gx >= GRID_WIDTH || gy < 0 || gy >= GRID_HEIGHT) return false;
-  return grid[gy][gx].type === TileType.Asphalt;
-}
-
-function getValidCarDirections(grid: GridCell[][], tileX: number, tileY: number): Direction[] {
-  const valid: Direction[] = [];
-  for (const dir of allDirections) {
-    const vec = directionVectors[dir];
-    if (isDrivable(grid, tileX + vec.dx, tileY + vec.dy)) {
-      valid.push(dir);
-    }
-  }
-  return valid;
-}
-
-function computePath(
-  grid: GridCell[][],
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-): Array<{ x: number; y: number }> | null {
-  const g: number[][] = Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_WIDTH).fill(0));
-  const visited: boolean[][] = Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_WIDTH).fill(false));
-  const set = new PriorityQueue<{ x: number; y: number }>((a, b) => {
-    const g1 = g[a.y][a.x] + getHeuristic(a.x, a.y, endX, endY);
-    const g2 = g[b.y][b.x] + getHeuristic(b.x, b.y, endX, endY);
-
-    return g1 - g2;
-  });
-  const came_from: { x: number; y: number }[][] = Array.from({ length: GRID_HEIGHT }, () =>
-    new Array(GRID_WIDTH).fill({ x: -1, y: -1 }),
-  );
-
-  console.log({ startX, startY, endX, endY, g, visited, came_from, x: g.length, y: g[0].length });
-  g[startY][startX] = 0;
-  visited[startY][startX] = true;
-  set.enqueue({ x: startX, y: startY });
-
-  while (!set.isEmpty()) {
-    const lowestNode = set.dequeue();
-    if (!lowestNode) break;
-
-    if (lowestNode.x == endX && lowestNode.y == endY) {
-      // Reached destination
-      const path: Array<{ x: number; y: number }> = [];
-
-      let current: { x: number; y: number } = { x: endX, y: endY };
-      while (true) {
-        if (current.x === startX && current.y === startY) {
-          break;
-        }
-        path.push({ x: current.x, y: current.y });
-        current = came_from[current.y][current.x];
-      }
-
-      return path.reverse();
-    }
-
-    visited[lowestNode.y][lowestNode.x] = true;
-
-    const directions = getValidCarDirections(grid, lowestNode.x, lowestNode.y);
-    for (const direction of directions) {
-      const cellX = lowestNode.x + directionVectors[direction].dx;
-      const cellY = lowestNode.y + directionVectors[direction].dy;
-
-      if (!visited[cellY][cellX]) {
-        const tentative_g = g[lowestNode.y][lowestNode.x] + 1;
-        const is_neighbour_in_set = set.contains(({ x, y }) => x === cellX && y === cellY);
-        if (!is_neighbour_in_set || tentative_g < g[cellY][cellX]) {
-          set.enqueue({ x: cellX, y: cellY });
-          g[cellY][cellX] = tentative_g;
-          came_from[cellY][cellX] = { x: lowestNode.x, y: lowestNode.y };
-        }
-      }
-    }
-  }
-
-  return null;
-}
 
 /**
  * Places a building on the grid
@@ -293,7 +194,6 @@ function placeBuilding(grid: GridCell[][], placement: BuildingPlacement): void {
 
 export class FleetFeastCity {
   readonly grid: GridCell[][];
-  readonly paths: Record<string, Record<string, Array<{x: number, y: number}> | null>>
 
   readonly ZONE_CONFIGS: ZoneConfig[] = [
     {
@@ -302,7 +202,7 @@ export class FleetFeastCity {
       bounds: { x: 0, y: 0, width: 12, height: 16 },
       tileType: TileType.Asphalt,
       borderColor: ZONE_COLORS.stadium,
-      parking_zones: [{ x: 8, y: 8 }],
+      parking_zones: [{ x: 14, y: 10 }],
     },
     {
       id: "park-1",
@@ -310,7 +210,7 @@ export class FleetFeastCity {
       bounds: { x: 16, y: 0, width: 20, height: 20 },
       tileType: TileType.Grass,
       borderColor: ZONE_COLORS.park,
-      parking_zones: [{ x: 17, y: 16 }],
+      parking_zones: [{ x: 22, y: 22 }],
     },
     {
       id: "residential-1",
@@ -319,8 +219,8 @@ export class FleetFeastCity {
       tileType: TileType.Tile,
       borderColor: ZONE_COLORS.residential,
       parking_zones: [
-        { x: 37, y: 4 },
-        { x: 37, y: 12 },
+        { x: 34, y: 10 },
+        { x: 38, y: 22 },
       ],
     },
     {
@@ -330,8 +230,8 @@ export class FleetFeastCity {
       tileType: TileType.Asphalt,
       borderColor: ZONE_COLORS.downtown,
       parking_zones: [
-        { x: 4, y: 28 },
-        { x: 24, y: 40 },
+        { x: 14, y: 30 },
+        { x: 6, y: 26 },
       ],
     },
     {
@@ -340,7 +240,7 @@ export class FleetFeastCity {
       bounds: { x: 32, y: 28, width: 16, height: 20 },
       tileType: TileType.Tile,
       borderColor: ZONE_COLORS.university,
-      parking_zones: [{ x: 40, y: 32 }],
+      parking_zones: [{ x: 34, y: 34 }],
     },
   ];
 
@@ -355,8 +255,6 @@ export class FleetFeastCity {
       })),
     );
 
-    this.paths = {}
-
     // Apply zone-specific ground tiles
     for (const zone of this.ZONE_CONFIGS) {
       const { bounds, tileType } = zone;
@@ -366,30 +264,6 @@ export class FleetFeastCity {
           const py = bounds.y + dy;
           if (px < GRID_WIDTH && py < GRID_HEIGHT) {
             this.grid[py][px].type = tileType;
-          }
-        }
-      }
-    }
-
-    // Apply parking spots (Tile type for food truck parking)
-    for (const zone of this.ZONE_CONFIGS) {
-      const spots = zone.parking_zones || [];
-      for (const spot of spots) {
-        const px = spot.x;
-        const py = spot.y;
-        if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-          this.grid[py][px].type = TileType.Tile;
-        }
-
-        this.paths[zone.id] = {}
-        // Compute path to all other parking spots in other zones and store that
-        for (const toZone of this.ZONE_CONFIGS) {
-          if (toZone.id === zone.id) continue;
-
-          for (const toParkingSpot of toZone.parking_zones) {
-            const path = computePath(this.grid, spot.x, spot.y, toParkingSpot.x, toParkingSpot.y);
-            // console.log(`Path from (${spot.x}, ${spot.y}) -> (${toParkingSpot.x}, ${toParkingSpot.y}): ${path}`)
-            this.paths[zone.id][toZone.id] = path;
           }
         }
       }
