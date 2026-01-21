@@ -37,6 +37,9 @@ class Truck(BaseModel):
     @property
     def is_available(self):
         return self.status == TruckStatus.SERVING or self.status == TruckStatus.IDLE
+    
+    def start_serving(self) -> None:
+        self.status = TruckStatus.SERVING
 
     def get_max_restockable_units(self) -> int:
         units_needed = self.max_inventory - self.inventory

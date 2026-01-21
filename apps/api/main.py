@@ -67,20 +67,7 @@ app.add_middleware(
 )
 
 
-@app.get("/get_state", response_model=State)
-async def get_state():
-    """Initialize the game by returning current state."""
-    try:
-        client = await get_redis()
-        state = State.model_validate_json(await client.get(config.game_state_key))
-        logger.debug("State retrieved", current_time=state.current_time)
-        return state
-    except Exception as e:
-        logger.error("Failed to get state", exc_info=True, error=str(e))
-        raise HTTPException(status_code=503, detail=f"Unable to get state: {str(e)}")
-
-
-@app.get("/events")
+@app.get("/events", response_model=State, operation_id="getEvents")
 async def sse_events():
     async def event_stream():
         client = await get_redis()

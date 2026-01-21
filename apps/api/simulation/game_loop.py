@@ -3,7 +3,7 @@ from utils import from_seconds
 from redis_client import get_redis, queue_length, dequeue
 from config import config
 from models import State, TruckStatus
-from tools import DispatchTruckSchema, RestockInventorySchema, HoldPositionSchema
+from tools import DispatchTruckSchema, RestockInventorySchema, HoldPositionSchema, StartServingSchema
 from logger import get_logger
 
 logger = get_logger("game_loop")
@@ -59,6 +59,19 @@ def process_action(state: State, action: str, action_time: int, payload: dict):
             truck_id=truck.id,
             current_inventory=truck.inventory,
             finish_time=truck.restocking_finish_time,
+        )
+    elif action == "start_serving":
+        args = StartServingSchema.model_validate(payload)
+        truck = next((t for t in state.trucks if t.id == args.truck_id), None)
+        if not truck:
+            logger.warning("Truck not found for restock", truck_id=args.truck_id)
+            return
+        
+        truck.start_serving()
+        logger.info(
+            "Truck started to serve",
+            truck_id=truck.id,
+            current_inventory=truck.inventory,
         )
     elif action == "hold_position":
         args = HoldPositionSchema.model_validate(payload)

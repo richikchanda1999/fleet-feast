@@ -8,15 +8,18 @@ from tools import (
     get_zone_forecast,
     hold_position,
     restock_inventory,
+    start_serving,
     DispatchTruckSchema,
     GetZoneForecastSchema,
     HoldPositionSchema,
     RestockInventorySchema,
+    StartServingSchema,
 )
-from ollama import chat, Message, ChatResponse
+from ollama import AsyncClient, Message, ChatResponse
 from logger import get_logger
 
 logger = get_logger("agent_decision_loop")
+MODEL = "qwen3-coder:30b"
 
 
 def format_time(minutes: int) -> str:
@@ -25,111 +28,97 @@ def format_time(minutes: int) -> str:
     return f"{h:02}:{m:02}"
 
 
-def get_current_demand(zone: Zone, current_time: int) -> str:
-    # Simple logic to tell LLM if it's currently hot
-    return "HIGH (Peak Hour)" if zone.is_peak_hour(current_time) else "LOW (Off-peak)"
-
-
-def get_inventory_status(truck) -> str:
-    """Return inventory status with clear warning labels."""
-    percentage = (truck.inventory / truck.max_inventory) * 100
-    if percentage >= 100:
-        return "FULL (DO NOT RESTOCK)"
-    elif percentage >= 70:
-        return "Good"
-    elif percentage >= 30:
-        return "Moderate"
-    else:
-        return "LOW (Consider restocking)"
+def get_zone_demand_value(zone: Zone, current_time: int) -> float:
+    """Get actual demand value for the zone at current time."""
+    if current_time < len(zone.demand):
+        return zone.demand[current_time]
+    return 0.0
 
 
 def generate_user_prompt(state: State) -> Message:
-    report = [f"CURRENT TIME: {format_time(state.current_time)}", ""]
+    """Generate compact, token-optimized status report."""
+    lines = [f"T={format_time(state.current_time)}"]
 
-    # Zone conditions first - so LLM sees demand before making decisions
-    report.append("ZONE CONDITIONS (Check demand before moving trucks!):")
-    zone_demands = {}
+    # Zone status: compact format
+    # Format: zone_id:demand_value(PEAK/off)
+    zone_info = {}
+    zone_line = "ZONES:"
     for z in state.zones:
-        demand = get_current_demand(z, state.current_time)
-        zone_demands[z.id] = demand
-        report.append(f"  - {z.id}: {demand}")
+        demand_val = get_zone_demand_value(z, state.current_time)
+        is_peak = z.is_peak_hour(state.current_time)
+        peak_marker = "PEAK" if is_peak else "off"
+        zone_info[z.id] = {"demand": demand_val, "is_peak": is_peak}
+        zone_line += f" {z.id}={demand_val:.1f}({peak_marker})"
+    lines.append(zone_line)
 
-    report.append("")
-    report.append("FLEET STATUS:")
+    # Truck status: compact table format
+    # Only show trucks that need decisions (IDLE or SERVING)
+    lines.append("TRUCKS:")
     for t in state.trucks:
-        inv_status = get_inventory_status(t)
         inv_pct = int((t.inventory / t.max_inventory) * 100)
-        current_zone_demand = zone_demands.get(t.current_zone, "Unknown")
+        z_info = zone_info.get(t.current_zone, {"demand": 0, "is_peak": False})
 
-        # Build status line
-        status_parts = [f"  - {t.id}:"]
-        status_parts.append(f"Zone={t.current_zone} ({current_zone_demand})")
-        status_parts.append(f"Inventory={t.inventory}/{t.max_inventory} ({inv_pct}%) [{inv_status}]")
-        status_parts.append(f"Status={t.status}")
+        # Compact format: id|status|zone|inv%|demand_at_zone
+        if t.status == TruckStatus.IDLE:
+            # IDLE trucks need action!
+            lines.append(f"  {t.id}|IDLE|{t.current_zone}|inv={inv_pct}%|zone_demand={z_info['demand']:.1f} ← NEEDS ACTION")
+        elif t.status == TruckStatus.SERVING:
+            lines.append(f"  {t.id}|SERVING|{t.current_zone}|inv={inv_pct}%|zone_demand={z_info['demand']:.1f}")
+        elif t.status == TruckStatus.MOVING:
+            lines.append(f"  {t.id}|MOVING→{t.destination_zone}|ETA={format_time(t.arrival_time)}|inv={inv_pct}%")
+        elif t.status == TruckStatus.RESTOCKING:
+            lines.append(f"  {t.id}|RESTOCKING|done={format_time(t.restocking_finish_time or 0)}|inv={inv_pct}%")
 
-        if t.status == TruckStatus.MOVING:
-            status_parts.append(f"ETA={format_time(t.arrival_time)}")
-        elif t.status == TruckStatus.RESTOCKING and t.restocking_finish_time:
-            status_parts.append(f"Restock ETA={format_time(t.restocking_finish_time)}")
+    # Travel times only for available trucks (compact)
+    available = [t for t in state.trucks if t.status in [TruckStatus.IDLE, TruckStatus.SERVING]]
+    if available:
+        lines.append("TRAVEL:")
+        for t in available:
+            z = next((z for z in state.zones if z.id == t.current_zone), None)
+            if z:
+                costs = ",".join([f"{k}:{v}m" for k, v in z.costs.items()])
+                lines.append(f"  from {t.current_zone}: {costs}")
 
-        status_parts.append(f"Revenue=${t.total_revenue:.2f}")
-
-        # Only show restocking cost if inventory is not full
-        if t.inventory < t.max_inventory:
-            status_parts.append(f"Restock cost=${t.get_restocking_cost():.2f}")
-
-        report.append(" | ".join(status_parts))
-
-    report.append("")
-    report.append("TRAVEL TIMES (minutes) - Remember: travel time = lost serving time:")
-    for t in state.trucks:
-        if t.status in [TruckStatus.IDLE, TruckStatus.SERVING]:
-            current_z = next(z for z in state.zones if z.id == t.current_zone)
-            connections = ", ".join([f"{k}={v}m" for k, v in current_z.costs.items()])
-            report.append(f"  From {t.current_zone}: [{connections}]")
-
-    report.append("")
-    report.append("DECISION REQUIRED: For each IDLE or SERVING truck, decide: hold_position, dispatch_truck, or restock_inventory.")
-    report.append("Remember: Do NOT restock full inventory trucks. Do NOT move unless destination has higher demand.")
-    return Message(role="user", content="\n".join(report))
+    return Message(role="user", content="\n".join(lines))
 
 
 def get_system_prompt() -> Message:
     return Message(
         role="system",
-        content="""
-You are the AI Fleet Manager for "Fleet Feast," a food truck logistics simulation.
-Your Goal: Maximize revenue by positioning trucks in high-demand zones and preventing inventory stockouts.
+        content="""You are the Fleet Manager AI. Goal: maximize revenue.
 
-CRITICAL RULES:
-1. NEVER restock a truck that has full inventory (100%). Restocking a full truck wastes time and provides zero benefit.
-2. NEVER move a truck unless the destination zone has HIGHER demand than the current zone. Moving wastes time when the truck could be serving customers.
-3. If a truck is in a HIGH demand zone with sufficient inventory, use hold_position. Staying put and serving is better than moving.
-4. Only dispatch a truck to a new zone if:
-   - The destination is currently in HIGH demand (Peak Hour), AND
-   - The current zone is in LOW demand (Off-peak)
-5. If inventory is < 30%, consider restocking ONLY if current zone demand is LOW.
+STATE MACHINE (critical to understand):
+- IDLE: Truck exists but NOT earning. Must call start_serving to begin earning!
+- SERVING: Truck is selling food and earning revenue (if demand > 0)
+- MOVING: Truck traveling, earns $0
+- RESTOCKING: Truck resupplying, earns $0
 
-TRUCK MECHANICS:
-- Speed multiplier affects travel time: 0.5x = 2x slower, 1.5x = 1.5x faster
-- Trucks cannot serve while moving or restocking
-- Every minute spent traveling is lost revenue opportunity
+DECISION RULES (in priority order):
 
-ZONE PEAK HOURS:
-- Downtown (Lunch peak)
-- University (Late night/Afternoon peak)
-- Park (Afternoon peak)
-- Residential (Dinner peak)
-- Stadium (Event only)
+1. IDLE truck + demand > 0 at current zone → start_serving (ALWAYS do this first!)
+   An IDLE truck earns NOTHING. If there's any demand, start serving immediately.
 
-DECISION PRIORITY:
-1. If inventory is full AND current zone is HIGH demand → hold_position
-2. If inventory is low AND current zone is LOW demand → restock_inventory
-3. If current zone is LOW demand AND another zone is HIGH demand → dispatch_truck
-4. Otherwise → hold_position (do not make unnecessary moves)
+2. IDLE truck + demand = 0 at current zone + demand > 0 elsewhere → dispatch_truck
+   Move to where there IS demand. Don't sit idle in an empty zone.
 
-Output ONE decision using the available tools. Prefer hold_position when uncertain.
-""",
+3. SERVING truck + low inventory (<30%) + low demand at zone → restock_inventory
+   Restock when you can afford the downtime.
+
+4. SERVING truck + demand = 0 at zone + demand > 0 elsewhere → dispatch_truck
+   If your zone dried up, move to where demand exists.
+
+5. SERVING truck in high demand zone + another truck's inventory critically low (<15%)
+   → Consider dispatching to that zone as backup before stockout occurs.
+
+6. SERVING truck + good inventory + demand > 0 → hold_position
+   Keep earning. Don't move unnecessarily.
+
+NEVER DO:
+- restock_inventory on full inventory (100%)
+- dispatch_truck when current zone has higher demand than destination
+- leave a truck IDLE when it could be SERVING
+
+Output ONE tool call per truck that needs action. Trucks that are MOVING or RESTOCKING need no action.""",
     )
 
 
@@ -138,8 +127,16 @@ def get_tool_definitions():
         {
             "type": "function",
             "function": {
+                "name": "start_serving",
+                "description": "Transition IDLE truck to SERVING. Use when truck is IDLE and zone has demand > 0. IDLE trucks earn nothing!",
+                "parameters": StartServingSchema.model_json_schema(),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "dispatch_truck",
-                "description": "Move a truck to a new zone. ONLY use when destination zone has HIGH demand and current zone has LOW demand. Moving wastes time that could be spent serving.",
+                "description": "Move truck to another zone. Use when current zone demand is 0 but destination has demand > 0.",
                 "parameters": DispatchTruckSchema.model_json_schema(),
             },
         },
@@ -147,32 +144,35 @@ def get_tool_definitions():
             "type": "function",
             "function": {
                 "name": "restock_inventory",
-                "description": "Send a truck to restock supplies. NEVER use on trucks with full inventory. Only use when inventory is low AND current zone demand is low.",
+                "description": "Restock truck supplies. Use when inventory < 30% AND zone demand is low. NEVER use on full inventory.",
                 "parameters": RestockInventorySchema.model_json_schema(),
             },
         },
         {
             "type": "function",
             "function": {
-                "name": "get_zone_forecast",
-                "description": "Check future demand multipliers for a specific zone. Use to plan ahead.",
-                "parameters": GetZoneForecastSchema.model_json_schema(),
+                "name": "hold_position",
+                "description": "Keep SERVING truck at current position. Use when already serving in a zone with demand.",
+                "parameters": HoldPositionSchema.model_json_schema(),
             },
         },
         {
             "type": "function",
             "function": {
-                "name": "hold_position",
-                "description": "Keep truck at current position. Use this when: (1) truck is in HIGH demand zone, (2) truck has full inventory, or (3) no better option exists. This is the safest default action.",
-                "parameters": HoldPositionSchema.model_json_schema(),
+                "name": "get_zone_forecast",
+                "description": "Check future demand for planning. Returns forecasted demand for 'n' number of hours in the future",
+                "parameters": GetZoneForecastSchema.model_json_schema(),
             },
         },
     ]
 
 
 async def agent_decision_loop():
-    client = await get_redis()
+    redis_client = await get_redis()
+    ollama_client = AsyncClient()  # Use async client to avoid blocking event loop
     logger.info("Agent decision loop started")
+
+    MAX_TOOL_ITERATIONS = 10  # Prevent infinite loops
 
     while True:
         # 1. Snapshot the current GAME_STATE
@@ -186,11 +186,13 @@ async def agent_decision_loop():
                     "Skipping decision cycle - pending actions in queue",
                     pending_actions_count=pending_actions_length,
                 )
+                await asyncio.sleep(5)  # Short sleep before checking again
                 continue
 
-            state = await client.get(config.game_state_key)
+            state = await redis_client.get(config.game_state_key)
             if not state:
                 logger.debug("No game state found, skipping decision cycle")
+                await asyncio.sleep(5)
                 continue
 
             state = State.model_validate_json(state)
@@ -217,16 +219,21 @@ async def agent_decision_loop():
                 "get_zone_forecast": get_zone_forecast,
                 "hold_position": hold_position,
                 "restock_inventory": restock_inventory,
+                "start_serving": start_serving,
             }
 
             tool_call_count = 0
-            while True:
-                logger.debug("Sending request to LLM", model="qwen3-coder:30b")
-                response: ChatResponse = chat(
-                    model="qwen3-coder:30b",
+            iteration_count = 0
+
+            while iteration_count < MAX_TOOL_ITERATIONS:
+                iteration_count += 1
+                logger.debug("Sending request to LLM", model=MODEL, iteration=iteration_count)
+
+                # Use async chat to avoid blocking the event loop
+                response: ChatResponse = await ollama_client.chat(
+                    model=MODEL,
                     messages=messages,
                     tools=get_tool_definitions(),
-                    stream=False
                 )
 
                 messages.append(response.message)
@@ -240,9 +247,7 @@ async def agent_decision_loop():
                                 function=tc.function.name,
                                 arguments=tc.function.arguments,
                             )
-                            result = await available_functions[tc.function.name](
-                                state=state, **tc.function.arguments
-                            )
+                            result = await available_functions[tc.function.name](state=state, **tc.function.arguments)
 
                             logger.info(
                                 "Tool call result",
@@ -266,13 +271,17 @@ async def agent_decision_loop():
                     logger.info(
                         "Agent decision cycle completed",
                         tool_calls_made=tool_call_count,
-                        final_response=(
-                            response.message.content[:200]
-                            if response.message.content
-                            else None
-                        ),
+                        iterations=iteration_count,
+                        final_response=(response.message.content[:200] if response.message.content else None),
                     )
                     break
+
+            if iteration_count >= MAX_TOOL_ITERATIONS:
+                logger.warning(
+                    "Agent decision cycle hit max iterations",
+                    tool_calls_made=tool_call_count,
+                    max_iterations=MAX_TOOL_ITERATIONS,
+                )
 
         except Exception as e:
             logger.error("Error in agent decision loop", exc_info=True, error=str(e))
