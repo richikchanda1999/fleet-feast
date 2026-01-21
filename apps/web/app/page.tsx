@@ -15,7 +15,17 @@ const GameBoard = dynamic(() => import("pogicity").then((m) => m.GameBoard), {
 
 export default function Home() {
   const { isConnected, error } = useGameState();
-  const { city } = useGameStore((state) => state);
+  const { city, trucks, currentTime } = useGameStore((state) => state);
+
+  const truckStates = trucks
+    .filter((truck) => truck.status !== undefined)
+    .map((truck) => ({
+      id: truck.id,
+      status: truck.status!, // Safe due to filter above
+      current_zone: truck.current_zone,
+      destination_zone: truck.destination_zone,
+      arrival_time: truck.arrival_time,
+    }));
 
   return (
     <div className="flex h-screen w-screen">
@@ -24,6 +34,8 @@ export default function Home() {
           <GameBoard
             initialGrid={city.grid}
             zones={city.ZONE_CONFIGS}
+            trucks={truckStates}
+            currentTime={currentTime}
             handleBuildingClick={(
               buildingId: string | null,
               originX: number,
